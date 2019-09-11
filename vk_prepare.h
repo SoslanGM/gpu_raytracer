@@ -159,11 +159,29 @@ char *RevEnum(string *enum_buffer, s32 value)
     return RetrieveVkEnumString(enum_buffer, value, debugprint);
 }
 
-void LoadVkEnums(string *vk_sdk_path)
+
+
+string *FindVulkanSDK()
 {
-    char *header_path = (char *)calloc(260, sizeof(char));
+    u32 MAX_LEN = 260;
+    
+    string *result = (string *)calloc(1, sizeof(string));
+    result->length = MAX_LEN;
+    result->ptr = (char *)calloc(MAX_LEN, sizeof(char));
+    GetEnvironmentVariable("vulkan_sdk", result->ptr, MAX_LEN);
+    
+    return result;
+}
+
+void LoadVkEnums()
+{
+    string *vk_sdk_path = FindVulkanSDK();
+    string *header_end = String("/Include/vulkan/vulkan_core.h");
+    
+    char *header_path = (char *)calloc(1024, sizeof(char));
     strncpy(header_path, vk_sdk_path->ptr, vk_sdk_path->length);
-    strcat(header_path, "/Include/vulkan/vulkan_core.h");
+    strncat(header_path, header_end->ptr, header_end->length);
+    header_path[vk_sdk_path->length+header_end->length] = terminator;
     
     vk_enums.result_enum      = RetrieveEnum(header_path, "VkResult");
     vk_enums.format_enum      = RetrieveEnum(header_path, "VkFormat");

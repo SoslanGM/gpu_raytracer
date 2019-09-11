@@ -53,7 +53,46 @@ typedef struct
     u32 length;
     char *ptr;
 } string;
+string *String(u32 size)   // empty string of a size
+{
+    string *result = (string *)calloc(1, sizeof(string));
+    result->length = size;
+    result->ptr = (char *)calloc(size, sizeof(char));
+    
+    return result;
+}
+string *String(char *str)  // encapsulated string. Don't forget the terminator!
+{
+    string *result = (string *)calloc(1, sizeof(string));
+    result->length = strlen(str);
+    result->ptr = (char *)calloc(result->length+1, sizeof(char));
+    result->ptr[result->length] = terminator;
+    strncpy(result->ptr, str, result->length);
+    
+    return result;
+}
 
+typedef struct
+{
+    u32 count;
+    string **lines;
+} text;
+/*
+    lines[0] = line0;
+    lines[1] = line1;
+    
+    line0 = String(15);  <- pass size?
+    // - or -
+string *line0 = (string *)calloc(1, sizeof(string));
+    line0.length = 15;
+    line0.ptr = (char *)calloc(line0.length, sizeof(char));
+    
+strncpy(line0.ptr, "boiii", line0.length);
+
+    line1 = String();
+    line1.length = 30;
+    line1.ptr = "This is right!";
+    */
 
 struct
 {
@@ -76,6 +115,19 @@ struct
     u32 queue_family_index;
     VkQueue queue;
     
+    VkExtent2D screenextent;
+    
+    VkFormat format;
+    VkComponentMapping components;
+    VkImageSubresourceRange color_sr;
+    VkColorSpaceKHR color_space;
+    VkPresentModeKHR present_mode;
+    
+    VkSwapchainKHR swapchain;
+    VkImage *swapchain_images;
+    VkImageView *swapchain_imageviews;
+    VkFramebuffer *framebuffers;
+    
     VkPhysicalDeviceMemoryProperties gpu_memprops;
     
     VkPipeline compipe;
@@ -85,4 +137,19 @@ struct
     
     VkCommandBuffer cbuffer;
 } vk;
+
+struct
+{
+    u32 image_count = 2;
+    
+    
+} data;
+
+struct
+{
+    HINSTANCE instance;
+    HWND window;
+    u32 window_width;
+    u32 window_height;
+} app;
 
