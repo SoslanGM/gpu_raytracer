@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <shlwapi.h>
 
+#include "D:/RenderDoc/renderdoc_app.h"
+RENDERDOC_API_1_1_2 *rdoc_api = NULL;
+
 // VULKANSSS
 #define VK_USE_PLATFORM_WIN32_KHR
 #define VK_NO_PROTOTYPES
@@ -818,11 +821,34 @@ void CreateSampler(VkSampler *sampler)
 }
 
 
+
+#define RD 0
+
 int CALLBACK WinMain(HINSTANCE instance,
                      HINSTANCE prevInstance,
                      LPSTR commandLine,
                      int showMode)
 {
+#if RD
+    HMODULE mod = NULL;
+    if(mod = LoadLibrary("D:/RenderDoc/renderdoc.dll"))
+    {
+        pRENDERDOC_GetAPI RENDERDOC_GetAPI = (pRENDERDOC_GetAPI)GetProcAddress(mod, "RENDERDOC_GetAPI");
+        int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_4_0, (void **)&rdoc_api);
+        if(ret != 1)
+        {
+            ODS("Can't get RD API\n");
+            exit(0);
+        }
+    }
+    else
+    {
+        ODS("Can't load RD");
+        exit(0);
+    }
+#endif
+    
+    
     app.instance = instance;
     app.window_width = 1280;
     app.window_height = 720;
@@ -867,6 +893,8 @@ int CALLBACK WinMain(HINSTANCE instance,
                       ext_names,   ext_count);
     ODS("Here's a Vulkan instance: 0x%p\n", &vk.instance);
     Vulkan_LoadExtensionFunctions(vk.instance);
+    
+    RENDERDOC_DevicePointer RD_device = RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(vk.instance);
     
     SetupDebugging();
     GetGPU();
@@ -1227,7 +1255,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     VkPipelineColorBlendAttachmentState colorblend_attachment = {};
-    colorblend_attachment.blendEnable         = VK_TRUE;
+    colorblend_attachment.blendEnable         = VK_FALSE;
     colorblend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
     colorblend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     colorblend_attachment.colorBlendOp        = VK_BLEND_OP_ADD;
@@ -1358,12 +1386,18 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkAllocateDescriptorSets(vk.device, &descriptorset_ai, &descriptorset);
     
     
+#if 0
+    u8 *girlpixels = ReadImage("../assets/image.jpg", app.window_width, app.window_height);
+    u32 
+        VkImage girlimage;
+    
+    
     VkSampler sampler;
     CreateSampler(&sampler);
     
     VkDescriptorImageInfo computed_image_info = {};
     computed_image_info.sampler     = sampler;
-    computed_image_info.imageView   = computed_imageview;
+    computed_image_info.imageView   = girlimage;//computed_imageview;
     computed_image_info.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
     
     VkWriteDescriptorSet descriptor_write = {};
@@ -1378,7 +1412,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     descriptor_write.pBufferInfo      = NULL;
     descriptor_write.pTexelBufferView = NULL;
     vkUpdateDescriptorSets(vk.device, 1, &descriptor_write, 0, NULL);
-    
+#endif
     
     
     VkSemaphoreCreateInfo sem_ci = {};
@@ -1389,9 +1423,15 @@ int CALLBACK WinMain(HINSTANCE instance,
     VkSemaphore semaphore_acquired;
     vkCreateSemaphore(vk.device, &sem_ci, NULL, &semaphore_acquired);
     
-    u32 present_index = 0;
-    vkAcquireNextImageKHR(vk.device, vk.swapchain, UINT64_MAX, semaphore_acquired, NULL, &present_index);
     
+#if RD
+    rdoc_api->StartFrameCapture(RD_device, app.window);
+#endif
+    
+    
+    u32 present_index = 0;
+    VkResult acqres = vkAcquireNextImageKHR(vk.device, vk.swapchain, UINT64_MAX, semaphore_acquired, NULL, &present_index);
+    ODS("Acquisition result: %s\n", RevEnum(vk_enums.result_enum, acqres));
     
     vk.framebuffers = (VkFramebuffer *)calloc(2, sizeof(VkFramebuffer));
     
@@ -1411,12 +1451,11 @@ int CALLBACK WinMain(HINSTANCE instance,
     }
     
     
-    
     VkPhysicalDeviceMemoryProperties gpu_memprops;
     vkGetPhysicalDeviceMemoryProperties(vk.gpu, &gpu_memprops);
     
     VkDeviceMemory vertex_memory;
-    VkBuffer vertex_buffer = CreateBuffer(6 * sizeof(float),
+    VkBuffer vertex_buffer = CreateBuffer(4 * 6 * sizeof(float),
                                           VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                           vk.device,
@@ -1427,15 +1466,15 @@ int CALLBACK WinMain(HINSTANCE instance,
     {
         r32 x, y, z, w, u, v;
     };
-    vertex v0 = { -0.5f, -0.5f, 0.0f, 1.0f,  0.0f, 0.0f };
-    vertex v1 = { -0.5f,  0.5f, 0.0f, 1.0f,  0.0f, 1.0f };
-    vertex v2 = {  0.5f, -0.5f, 0.0f, 1.0f,  1.0f, 0.0f };
-    vertex v3 = {  0.5f,  0.5f, 0.0f, 1.0f,  1.0f, 1.0f };
+    vertex v0 = { -1.0f, -1.0f, 0.0f, 1.0f,  0.0f, 0.0f };
+    vertex v1 = { -1.0f,  1.0f, 0.0f, 1.0f,  0.0f, 1.0f };
+    vertex v2 = {  1.0f, -1.0f, 0.0f, 1.0f,  1.0f, 0.0f };
+    vertex v3 = {  1.0f,  1.0f, 0.0f, 1.0f,  1.0f, 1.0f };
     vertex quad[] = { v0, v1, v2, v3 };
     
     void *vertex_mapptr;
     vkMapMemory(vk.device, vertex_memory, 0, VK_WHOLE_SIZE, 0, &vertex_mapptr);
-    memcpy(vertex_mapptr, quad, sizeof(vertex) * 4);
+    memcpy(vertex_mapptr, quad, sizeof(float) * 6 * 4);
     vkUnmapMemory(vk.device, vertex_memory);
     
     
@@ -1447,13 +1486,12 @@ int CALLBACK WinMain(HINSTANCE instance,
                                          gpu_memprops,
                                          &index_memory);
     
-    u32 indexes[] = { 0, 1, 2, 2, 3, 1 };
+    u32 indexes[] = { 0, 1, 2, 1, 3, 2 };
     
     void *index_mapptr;
     vkMapMemory(vk.device, index_memory, 0, VK_WHOLE_SIZE, 0, &index_mapptr);
-    memcpy(index_mapptr, quad, sizeof(u32) * 4);
+    memcpy(index_mapptr, indexes, sizeof(u32) * 6);
     vkUnmapMemory(vk.device, index_memory);
-    
     
     
     VkClearValue clear_color = { 1.0f, 0.4f, 0.7f, 1.0f };
@@ -1510,6 +1548,10 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkQueuePresentKHR(vk.queue, &pi);
     ODS("Present result: %s\n", RevEnum(vk_enums.result_enum, result));
     
+#if RD
+    rdoc_api->EndFrameCapture(RD_device, app.window);
+    rdoc_api->GetCapture(0, "V:/core/capture.doc", NULL, NULL);
+#endif
     
     MSG msg;
     bool done = false;
