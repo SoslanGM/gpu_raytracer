@@ -13,6 +13,10 @@ RENDERDOC_API_1_1_2 *rdoc_api = NULL;
 #include "vulkan/vulkan.h"
 #include "vulkan/vk_platform.h"
 
+// SSSTB
+#define STB_IMAGE_IMPLEMENTATION
+#include "../lib/stb_image.h"
+
 // PRECIOUSSS
 #include "M:/types.h"
 #include "M:/special_symbols.h"
@@ -821,6 +825,15 @@ void CreateSampler(VkSampler *sampler)
 }
 
 
+u8 *ReadImage(char *filename, u32 *width, u32 *height)
+{
+    s32 image_channels;
+    s32 force_channels = 4;
+    u8 *pixels = stbi_load(filename, (s32 *)width, (s32 *)height, &image_channels, force_channels);
+    
+    return pixels;
+}
+
 
 #define RD 0
 
@@ -1011,6 +1024,19 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkResetFences(vk.device, 1, &fence);
     
     
+    
+    
+    VkImageMemoryBarrier barrier = {};
+    barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.pNext               = NULL;
+    barrier.srcAccessMask       = VK_ACCESS_HOST_READ_BIT;
+    barrier.dstAccessMask       = VK_ACCESS_HOST_WRITE_BIT;
+    barrier.oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout           = VK_IMAGE_LAYOUT_GENERAL;
+    //barrier.image               = computed_image;
+    barrier.subresourceRange    = vk.color_sr;
+    
+    
 #if 0
     // Compute
     VkImage computed_image;
@@ -1022,16 +1048,6 @@ int CALLBACK WinMain(HINSTANCE instance,
                 VK_IMAGE_LAYOUT_UNDEFINED, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     CreateImageView(&computed_image, &computed_imageview);
     
-    
-    VkImageMemoryBarrier barrier = {};
-    barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.pNext               = NULL;
-    barrier.srcAccessMask       = VK_ACCESS_HOST_READ_BIT;
-    barrier.dstAccessMask       = VK_ACCESS_HOST_WRITE_BIT;
-    barrier.oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
-    barrier.newLayout           = VK_IMAGE_LAYOUT_GENERAL;
-    barrier.image               = computed_image;
-    barrier.subresourceRange    = vk.color_sr;
     
     vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
     vkCmdPipelineBarrier(commandbuffer,
@@ -1386,10 +1402,100 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkAllocateDescriptorSets(vk.device, &descriptorset_ai, &descriptorset);
     
     
-#if 0
-    u8 *girlpixels = ReadImage("../assets/image.jpg", app.window_width, app.window_height);
-    u32 
-        VkImage girlimage;
+    
+    
+    VkPhysicalDeviceMemoryProperties gpu_memprops;
+    vkGetPhysicalDeviceMemoryProperties(vk.gpu, &gpu_memprops);
+    
+    VkDeviceMemory staging_memory;
+    VkBuffer staging_buffer = CreateBuffer(10 * 1024 * 1024,
+                                           VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                           vk.device,
+                                           gpu_memprops,
+                                           &staging_memory);
+    
+    u32 width = 0, height = 0;
+    u8 *girlpixels = ReadImage("../assets/image.jpg", &width, &height);
+    u32 girlbytes = app.window_width * app.window_height * 4;
+    
+    void *stagingmapptr;
+    vkMapMemory(vk.device, staging_memory, 0, girlbytes, 0, &stagingmapptr);
+    memcpy(stagingmapptr, girlpixels, girlbytes);
+    vkUnmapMemory(vk.device, staging_memory);
+    
+    
+    VkImage girlimage;
+    VkDeviceMemory girlmemory;
+    VkImageView girlview;
+    CreateImage(&girlimage, &girlmemory, app.window_width, app.window_height,
+                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                VK_IMAGE_LAYOUT_PREINITIALIZED, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    CreateImageView(&girlimage, &girlview);
+    
+    VkFence stagingfence;
+    vkCreateFence(vk.device, &fence_ci, NULL, &stagingfence);
+    VkFence transitfence;
+    vkCreateFence(vk.device, &fence_ci, NULL, &transitfence);
+    
+    barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.pNext               = NULL;
+    barrier.srcAccessMask       = VK_ACCESS_HOST_READ_BIT;
+    barrier.dstAccessMask       = VK_ACCESS_HOST_WRITE_BIT;
+    barrier.oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.image               = girlimage;
+    barrier.subresourceRange    = vk.color_sr;
+    
+    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
+    vkCmdPipelineBarrier(commandbuffer,
+                         VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+                         0,
+                         0, NULL,
+                         0, NULL,
+                         1, &barrier);
+    vkEndCommandBuffer(commandbuffer);
+    vkQueueSubmit(vk.queue, 1, &transit_si, fence);
+    
+    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &fence);
+    
+    VkImageSubresourceLayers srl = {};
+    srl.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+    srl.mipLevel       = 0;
+    srl.baseArrayLayer = 0;
+    srl.layerCount     = 1;
+    
+    VkBufferImageCopy region = {};
+    region.bufferOffset       = 0;
+    region.bufferRowLength    = 0;
+    region.bufferImageHeight  = 0;
+    region.imageSubresource   = srl;
+    region.imageOffset.x      = 0;
+    region.imageOffset.y      = 0;
+    region.imageOffset.z      = 0;
+    region.imageExtent.width  = app.window_width;
+    region.imageExtent.height = app.window_height;
+    region.imageExtent.depth  = 1;
+    
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    
+    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
+    vkCmdCopyBufferToImage(commandbuffer, staging_buffer, girlimage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    vkCmdPipelineBarrier(commandbuffer,
+                         VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+                         0,
+                         0, NULL,
+                         0, NULL,
+                         1, &barrier);
+    vkEndCommandBuffer(commandbuffer);
+    vkQueueSubmit(vk.queue, 1, &transit_si, fence);
+    
+    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &fence);
+    
+    
     
     
     VkSampler sampler;
@@ -1397,8 +1503,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     VkDescriptorImageInfo computed_image_info = {};
     computed_image_info.sampler     = sampler;
-    computed_image_info.imageView   = girlimage;//computed_imageview;
-    computed_image_info.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    computed_image_info.imageView   = girlview;//computed_imageview;
+    computed_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     
     VkWriteDescriptorSet descriptor_write = {};
     descriptor_write.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -1412,7 +1518,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     descriptor_write.pBufferInfo      = NULL;
     descriptor_write.pTexelBufferView = NULL;
     vkUpdateDescriptorSets(vk.device, 1, &descriptor_write, 0, NULL);
-#endif
+    
     
     
     VkSemaphoreCreateInfo sem_ci = {};
@@ -1450,9 +1556,6 @@ int CALLBACK WinMain(HINSTANCE instance,
         vkCreateFramebuffer(vk.device, &framebuffer_ci, NULL, &vk.framebuffers[i]);
     }
     
-    
-    VkPhysicalDeviceMemoryProperties gpu_memprops;
-    vkGetPhysicalDeviceMemoryProperties(vk.gpu, &gpu_memprops);
     
     VkDeviceMemory vertex_memory;
     VkBuffer vertex_buffer = CreateBuffer(4 * 6 * sizeof(float),
