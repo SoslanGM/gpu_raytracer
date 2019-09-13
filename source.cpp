@@ -1025,19 +1025,12 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
-    
-    VkImageMemoryBarrier barrier = {};
-    barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.pNext               = NULL;
-    barrier.srcAccessMask       = VK_ACCESS_HOST_READ_BIT;
-    barrier.dstAccessMask       = VK_ACCESS_HOST_WRITE_BIT;
-    barrier.oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
-    barrier.newLayout           = VK_IMAGE_LAYOUT_GENERAL;
-    //barrier.image               = computed_image;
-    barrier.subresourceRange    = vk.color_sr;
+    // Resources
+    // - open the rabbit
+    // - load the vertexes
     
     
-#if 0
+    
     // Compute
     VkImage computed_image;
     VkImageView computed_imageview;
@@ -1048,6 +1041,15 @@ int CALLBACK WinMain(HINSTANCE instance,
                 VK_IMAGE_LAYOUT_UNDEFINED, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     CreateImageView(&computed_image, &computed_imageview);
     
+    VkImageMemoryBarrier barrier = {};
+    barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.pNext               = NULL;
+    barrier.srcAccessMask       = VK_ACCESS_HOST_READ_BIT;
+    barrier.dstAccessMask       = VK_ACCESS_HOST_WRITE_BIT;
+    barrier.oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout           = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.image               = computed_image;
+    barrier.subresourceRange    = vk.color_sr;
     
     vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
     vkCmdPipelineBarrier(commandbuffer,
@@ -1158,11 +1160,24 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkUpdateDescriptorSets(vk.device, 1, &compute_write, 0, NULL);
     
     
+    u32 xdim = ceil(r32(app.window_width) / 32.0f);
+    u32 ydim = ceil(r32(app.window_height) / 32.0f);
+    
     vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
     vkCmdBindDescriptorSets(commandbuffer, VK_PIPELINE_BIND_POINT_COMPUTE, vk.pipelayout, 0, 1, &vk.dsl, 0, NULL);
     vkCmdBindPipeline(commandbuffer, VK_PIPELINE_BIND_POINT_COMPUTE, vk.compipe);
+    vkCmdDispatch(commandbuffer, xdim, ydim, 1);
     vkEndCommandBuffer(commandbuffer);
-#endif
+    
+    
+    
+    VkSubmitInfo compute_si = {};
+    compute_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    compute_si.pNext                = NULL;
+    compute_si.pWaitDstStageMask    = &wait_stage_mask;
+    compute_si.commandBufferCount   = 1;
+    compute_si.pCommandBuffers      = &commandbuffer;
+    vkQueueSubmit(vk.queue, 1, &compute_si, fence);
     
     
     // Graphics
@@ -1503,7 +1518,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     VkDescriptorImageInfo computed_image_info = {};
     computed_image_info.sampler     = sampler;
-    computed_image_info.imageView   = girlview;//computed_imageview;
+    //computed_image_info.imageView   = girlview;
+    computed_image_info.imageView   = computed_imageview;
     computed_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     
     VkWriteDescriptorSet descriptor_write = {};

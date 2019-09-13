@@ -3,7 +3,7 @@
 IF NOT EXIST ..\build\ mkdir ..\build
 pushd ..\build
 
-::glslangValidator -V ..\code\shader.comp -o ..\code\shader_comp.spv
+glslangValidator -V ..\code\shader.comp -o ..\code\shader_comp.spv
 glslangValidator -V ..\code\shader.vert -o ..\code\shader_vert.spv
 glslangValidator -V ..\code\shader.frag -o ..\code\shader_frag.spv
 
