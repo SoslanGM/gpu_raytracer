@@ -1178,7 +1178,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     compute_si.commandBufferCount   = 1;
     compute_si.pCommandBuffers      = &commandbuffer;
     vkQueueSubmit(vk.queue, 1, &compute_si, fence);
-    
+    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &fence);
     
     // Graphics
     VkShaderModule vert_module = GetShaderModule("../code/shader_vert.spv");
@@ -1430,74 +1431,11 @@ int CALLBACK WinMain(HINSTANCE instance,
                                            gpu_memprops,
                                            &staging_memory);
     
-    u32 width = 0, height = 0;
-    u8 *girlpixels = ReadImage("../assets/image.jpg", &width, &height);
-    u32 girlbytes = app.window_width * app.window_height * 4;
-    
-    void *stagingmapptr;
-    vkMapMemory(vk.device, staging_memory, 0, girlbytes, 0, &stagingmapptr);
-    memcpy(stagingmapptr, girlpixels, girlbytes);
-    vkUnmapMemory(vk.device, staging_memory);
-    
-    
-    VkImage girlimage;
-    VkDeviceMemory girlmemory;
-    VkImageView girlview;
-    CreateImage(&girlimage, &girlmemory, app.window_width, app.window_height,
-                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-                VK_IMAGE_LAYOUT_PREINITIALIZED, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    CreateImageView(&girlimage, &girlview);
-    
-    VkFence stagingfence;
-    vkCreateFence(vk.device, &fence_ci, NULL, &stagingfence);
-    VkFence transitfence;
-    vkCreateFence(vk.device, &fence_ci, NULL, &transitfence);
-    
-    barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.pNext               = NULL;
-    barrier.srcAccessMask       = VK_ACCESS_HOST_READ_BIT;
-    barrier.dstAccessMask       = VK_ACCESS_HOST_WRITE_BIT;
-    barrier.oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
-    barrier.newLayout           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.image               = girlimage;
-    barrier.subresourceRange    = vk.color_sr;
-    
-    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-    vkCmdPipelineBarrier(commandbuffer,
-                         VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_HOST_BIT,
-                         0,
-                         0, NULL,
-                         0, NULL,
-                         1, &barrier);
-    vkEndCommandBuffer(commandbuffer);
-    vkQueueSubmit(vk.queue, 1, &transit_si, fence);
-    
-    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-    vkResetFences(vk.device, 1, &fence);
-    
-    VkImageSubresourceLayers srl = {};
-    srl.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
-    srl.mipLevel       = 0;
-    srl.baseArrayLayer = 0;
-    srl.layerCount     = 1;
-    
-    VkBufferImageCopy region = {};
-    region.bufferOffset       = 0;
-    region.bufferRowLength    = 0;
-    region.bufferImageHeight  = 0;
-    region.imageSubresource   = srl;
-    region.imageOffset.x      = 0;
-    region.imageOffset.y      = 0;
-    region.imageOffset.z      = 0;
-    region.imageExtent.width  = app.window_width;
-    region.imageExtent.height = app.window_height;
-    region.imageExtent.depth  = 1;
-    
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.image = computed_image;
     
     vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-    vkCmdCopyBufferToImage(commandbuffer, staging_buffer, girlimage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
     vkCmdPipelineBarrier(commandbuffer,
                          VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_HOST_BIT,
                          0,
@@ -1518,7 +1456,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     VkDescriptorImageInfo computed_image_info = {};
     computed_image_info.sampler     = sampler;
-    //computed_image_info.imageView   = girlview;
     computed_image_info.imageView   = computed_imageview;
     computed_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     
@@ -1652,6 +1589,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkQueueSubmit(vk.queue, 1, &si, fence_rendered);
     VkResult res = vkWaitForFences(vk.device, 1, &fence_rendered, VK_TRUE, UINT64_MAX);
     ODS("Render wait result: %s\n", RevEnum(vk_enums.result_enum, res));
+    vkResetFences(vk.device, 1, &fence);
     
     
     VkResult result;
