@@ -195,14 +195,12 @@ void LoadVkEnums()
 
 void EnumerateGlobalExtensions()
 {
-    VkResult result;
-    
     u32 global_propscount;
     result = vkEnumerateInstanceExtensionProperties(NULL, &global_propscount, NULL);
-    ODS("Instance extension props(count): %s\n", RevEnum(vk_enums.result_enum, result));
+    ODS_RES("Instance extension props(count): %s\n");
     VkExtensionProperties *global_props = (VkExtensionProperties *)malloc(sizeof(VkExtensionProperties) * global_propscount);
     result = vkEnumerateInstanceExtensionProperties(NULL, &global_propscount, global_props);
-    ODS("Instance extension props(fill):  %s\n", RevEnum(vk_enums.result_enum, result));
+    ODS_RES("Instance extension props(fill):  %s\n");
     
     ODS("\n> Instance-wide extensions: %d\n", global_propscount);
     for(u32 i = 0; i < global_propscount; i++)
@@ -218,14 +216,12 @@ void EnumerateGlobalExtensions()
 
 void EnumerateLayerExtensions()
 {
-    VkResult result;
-    
     u32 layer_count = 0;
     result = vkEnumerateInstanceLayerProperties(&layer_count, NULL);
-    ODS("Instance layer props(count): %s\n", RevEnum(vk_enums.result_enum, result));
+    ODS_RES("Instance layer props(count): %s\n");
     VkLayerProperties *layer_props = (VkLayerProperties *)malloc(sizeof(VkLayerProperties) * layer_count);
     result = vkEnumerateInstanceLayerProperties(&layer_count, layer_props);
-    ODS("Instance layer props(fill):  %s\n", RevEnum(vk_enums.result_enum, result));
+    ODS_RES("Instance layer props(fill):  %s\n");
     
     ODS("\n> Instance layers: %d\n", layer_count);
     for(u32 i = 0; i < layer_count; i++)

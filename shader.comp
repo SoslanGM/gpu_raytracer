@@ -12,6 +12,8 @@ void main()
     if(gl_GlobalInvocationID.x > WIDTH || gl_GlobalInvocationID.y > HEIGHT)
         return;
     
+    
+    
     imageStore(data,
                ivec2(gl_GlobalInvocationID.xy),
                vec4(0.5, 0.2, 0.35, 1.0));

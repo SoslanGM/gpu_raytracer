@@ -13,6 +13,12 @@ RENDERDOC_API_1_1_2 *rdoc_api = NULL;
 #include "vulkan/vulkan.h"
 #include "vulkan/vk_platform.h"
 
+VkResult result;
+
+// LIBSSS
+#define OBJ_PARSE_IMPLEMENTATION
+#include "../lib/obj_parse.h"
+
 // SSSTB
 #define STB_IMAGE_IMPLEMENTATION
 #include "../lib/stb_image.h"
@@ -28,10 +34,18 @@ RENDERDOC_API_1_1_2 *rdoc_api = NULL;
 //#include "vk_setup.h"
 
 
-
-void GetVulkanInstance(char **layer_names, u32 layer_count,
-                       char **ext_names,   u32 ext_count)
+void GetVulkanInstance(char **ext_names,   u32 ext_count,
+                       char **layer_names, u32 layer_count)
 {
+    VkApplicationInfo appinfo = {};
+    appinfo.sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    appinfo.pNext              = NULL;
+    appinfo.pApplicationName   = "Toy RT";
+    appinfo.applicationVersion = 0;
+    appinfo.pEngineName        = "Toy RT Engine";
+    appinfo.engineVersion      = 0;
+    appinfo.apiVersion         = VK_MAKE_VERSION(1, 1, 121);
+    
     VkInstanceCreateInfo instance_ci = {};
     instance_ci.sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instance_ci.pNext                   = NULL;
@@ -42,7 +56,6 @@ void GetVulkanInstance(char **layer_names, u32 layer_count,
     instance_ci.enabledExtensionCount   = ext_count;
     instance_ci.ppEnabledExtensionNames = ext_names;
     
-    VkResult result;
     result = vkCreateInstance(&instance_ci, NULL, &vk.instance);
     ODS_RES("Instance creation: %s\n");
 }
@@ -64,8 +77,6 @@ DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
 
 void SetupDebugging()
 {
-    VkResult result;
-    
     VkDebugUtilsMessengerCreateInfoEXT debug_messenger_ci = {};
     debug_messenger_ci.sType           = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
     debug_messenger_ci.pNext           = NULL;
@@ -83,7 +94,7 @@ void SetupDebugging()
     debug_messenger_ci.pUserData       = NULL;
     
     result = vkCreateDebugUtilsMessengerEXT(vk.instance, &debug_messenger_ci, NULL, &vk.debug_messenger);
-    ODS("Debug utils messenger creation: %s\n", RevEnum(vk_enums.result_enum, result));
+    ODS_RES("Debug utils messenger creation: %s\n");
 }
 
 
@@ -100,8 +111,6 @@ void GetGPU()
 
 void CreateSurface()
 {
-    VkResult result;
-    
     VkWin32SurfaceCreateInfoKHR surface_ci = {};
     surface_ci.sType     = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
     surface_ci.pNext     = NULL;
@@ -110,12 +119,10 @@ void CreateSurface()
     surface_ci.hwnd      = app.window;
     
     result = vkCreateWin32SurfaceKHR(vk.instance, &surface_ci, NULL, &vk.surface);
-    ODS("Surface creation: %s\n", RevEnum(vk_enums.result_enum, result));
+    ODS_RES("Surface creation: %s\n");
 }
 void SetupQueue()
 {
-    VkResult result;
-    
     // ---
     u32 queuefam_propcount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(vk.gpu, &queuefam_propcount, NULL);
@@ -402,8 +409,6 @@ VkBuffer CreateBuffer(u32 size, u32 usage, u32 required_memprops,
 
 void CreateCommandPool(VkCommandPool *command_pool)
 {
-    VkResult result;
-    
     VkCommandPoolCreateInfo commandpool_ci = {};
     commandpool_ci.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     commandpool_ci.pNext            = NULL;
@@ -411,13 +416,11 @@ void CreateCommandPool(VkCommandPool *command_pool)
     commandpool_ci.queueFamilyIndex = vk.queue_family_index;
     
     result = vkCreateCommandPool(vk.device, &commandpool_ci, NULL, &(*command_pool));
-    ODS("Command pool result: %s\n", RevEnum(vk_enums.result_enum, result));
+    ODS_RES("Command pool result: %s\n");
 }
 
 void AllocateCommandBuffer(VkCommandPool command_pool, VkCommandBuffer *command_buffer)
 {
-    VkResult result;
-    
     VkCommandBufferAllocateInfo cb_ai = {};
     cb_ai.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     cb_ai.pNext              = NULL;
@@ -426,15 +429,13 @@ void AllocateCommandBuffer(VkCommandPool command_pool, VkCommandBuffer *command_
     cb_ai.commandBufferCount = 1;
     
     result = vkAllocateCommandBuffers(vk.device, &cb_ai, &vk.cbuffer);
-    ODS("Command buffer allocation: %s\n", RevEnum(vk_enums.result_enum, result));
+    ODS_RES("Command buffer allocation: %s\n");
 }
 
 
 
 void SwapchainCreate()
 {
-    VkResult result;
-    
     VkSwapchainCreateInfoKHR swapchain_ci = {};
     swapchain_ci.sType                 = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     swapchain_ci.pNext                 = NULL;
@@ -456,24 +457,20 @@ void SwapchainCreate()
     swapchain_ci.oldSwapchain          = NULL;
     
     result = vkCreateSwapchainKHR(vk.device, &swapchain_ci, NULL, &vk.swapchain);
-    ODS("Swapchain result: %s\n", RevEnum(vk_enums.result_enum, result));
+    ODS_RES("Swapchain result: %s\n");
 }
 void GetSwapchainImages()
 {
-    VkResult result;
-    
     u32 swapchain_imagecount = 0;
     result = vkGetSwapchainImagesKHR(vk.device, vk.swapchain, &swapchain_imagecount, NULL);
-    ODS("Swapchain images(count): %s\n", RevEnum(vk_enums.result_enum, result));
+    ODS_RES("Swapchain images(count): %s\n");
     vk.swapchain_images = (VkImage *)malloc(sizeof(VkImage) * swapchain_imagecount);
     result = vkGetSwapchainImagesKHR(vk.device, vk.swapchain, &swapchain_imagecount, vk.swapchain_images);
-    ODS("Swapchain images(fill):  %s\n", RevEnum(vk_enums.result_enum, result));
+    ODS_RES("Swapchain images(fill):  %s\n");
 }
 
 void CreateSwapchainImageViews()
 {
-    VkResult result;
-    
     VkImageViewCreateInfo imageview_ci = {};
     imageview_ci.sType            = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     imageview_ci.pNext            = NULL;
@@ -488,7 +485,7 @@ void CreateSwapchainImageViews()
     {
         imageview_ci.image = vk.swapchain_images[i];
         result = vkCreateImageView(vk.device, &imageview_ci, NULL, &vk.swapchain_imageviews[i]);
-        ODS("Swapchain imageview result: %s\n", RevEnum(vk_enums.result_enum, result));
+        ODS_RES("Swapchain imageview result: %s\n");
     }
 }
 
@@ -637,8 +634,8 @@ void TransitImageLayout(VkImageLayout old_layout, VkImageLayout new_layout, VkIm
     
     ODS("Waiting on transit fence\n");
     vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-    VkResult result = vkGetFenceStatus(vk.device, fence);
-    ODS("Transition fence result: %s\n", RevEnum(vk_enums.result_enum, result));
+    result = vkGetFenceStatus(vk.device, fence);
+    ODS_RES("Transition fence result: %s\n");
     
     ODS("> %s -> %s\n", RevEnum(vk_enums.imagelayout_enum, old_layout), RevEnum(vk_enums.imagelayout_enum, new_layout));
     
@@ -648,14 +645,12 @@ void TransitImageLayout(VkImageLayout old_layout, VkImageLayout new_layout, VkIm
 
 void GetFormatAndColorspace()
 {
-    VkResult result;
-    
     u32 surface_formatcount = 0;
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(vk.gpu, vk.surface, &surface_formatcount, NULL);
-    ODS("Surface formats(count): %s\n", RevEnum(vk_enums.result_enum, result));
+    ODS_RES("Surface formats(count): %s\n");
     VkSurfaceFormatKHR *surface_formats = (VkSurfaceFormatKHR *)malloc(sizeof(VkSurfaceFormatKHR) * surface_formatcount);
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(vk.gpu, vk.surface, &surface_formatcount, surface_formats);
-    ODS("Surface formats(fill):  %s\n", RevEnum(vk_enums.result_enum, result));
+    ODS_RES("Surface formats(fill):  %s\n");
     
     ODS("> Surface formats:\n");
     for(u32 i = 0; i < surface_formatcount; i++)
@@ -685,11 +680,9 @@ void GetFormatAndColorspace()
 
 void CheckSurfaceCapabilities()
 {
-    VkResult result;
-    
     VkSurfaceCapabilitiesKHR surface_caps;
     result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk.gpu, vk.surface, &surface_caps);
-    ODS("Physical device surface capabilities result: %s\n", RevEnum(vk_enums.result_enum, result));
+    ODS_RES("Physical device surface capabilities result: %s\n");
     
     ODS("> Surface capabilities:\n");
     ODS("- min images: %d\n", surface_caps.minImageCount);
@@ -707,14 +700,12 @@ void CheckSurfaceCapabilities()
 
 void SetPresentMode()
 {
-    VkResult result;
-    
     u32 present_modecount;
     result = vkGetPhysicalDeviceSurfacePresentModesKHR(vk.gpu, vk.surface, &present_modecount, NULL);
-    ODS("Surface formats(count): %s\n", RevEnum(vk_enums.result_enum, result));
+    ODS_RES("Surface formats(count): %s\n");
     VkPresentModeKHR *present_modes = (VkPresentModeKHR *)malloc(sizeof(VkPresentModeKHR) * present_modecount);
     result = vkGetPhysicalDeviceSurfacePresentModesKHR(vk.gpu, vk.surface, &present_modecount, present_modes);
-    ODS("Surface formats(fill):  %s\n", RevEnum(vk_enums.result_enum, result));
+    ODS_RES("Surface formats(fill):  %s\n");
     
     ODS("> Present modes:\n");
     for(u32 i = 0; i < present_modecount; i++)
@@ -772,9 +763,8 @@ void CreateImage(VkImage *image, VkDeviceMemory *memory,
                                              memory_properties,
                                              vk.gpu_memprops);
     
-    VkResult result;
     result = vkAllocateMemory(vk.device, &mem_ai, NULL, memory);
-    ODS("Memory allocation: %s\n", RevEnum(vk_enums.result_enum, result));
+    ODS_RES("Memory allocation: %s\n");
     
     vkBindImageMemory(vk.device, *image, *memory, 0);
     // ---
@@ -890,20 +880,21 @@ int CALLBACK WinMain(HINSTANCE instance,
     EnumerateGlobalExtensions();
     EnumerateLayerExtensions();
     
-    char *layer_names[] = {
-        "VK_LAYER_LUNARG_assistant_layer",
-        "VK_LAYER_KHRONOS_validation"
-    };
     char *ext_names[] = {
         "VK_KHR_surface",
         "VK_KHR_win32_surface",
         "VK_EXT_debug_utils"
     };
-    u32 layer_count = sizeof(layer_names)/sizeof(layer_names[0]);
-    u32 ext_count   = sizeof(ext_names)/sizeof(ext_names[0]);
+    u32 ext_count = sizeof(ext_names)/sizeof(ext_names[0]);
     
-    GetVulkanInstance(layer_names, layer_count,
-                      ext_names,   ext_count);
+    char *layer_names[] = {
+        "VK_LAYER_KHRONOS_validation"
+    };
+    u32 layer_count = sizeof(layer_names)/sizeof(layer_names[0]);
+    
+    GetVulkanInstance(ext_names,   ext_count,
+                      layer_names, layer_count);
+    
     ODS("Here's a Vulkan instance: 0x%p\n", &vk.instance);
     Vulkan_LoadExtensionFunctions(vk.instance);
     
@@ -1022,12 +1013,27 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
     vkResetFences(vk.device, 1, &fence);
+    // ---
+    
+    
     
     
     
     // Resources
     // - open the rabbit
     // - load the vertexes
+    
+    char *bunny_file = "../assets/bunny.obj";
+    ParsedOBJ bunny_obj = LoadOBJ(bunny_file);
+    ParsedOBJRenderable bunny = bunny_obj.renderables[0];
+    
+    ODS("Vertex count:      %d\n", bunny.vertex_count);
+    ODS("Floats per vertex: %d\n", bunny.floats_per_vertex);
+    ODS("Index count:       %d\n", bunny.index_count);
+    
+    // ---
+    
+    
     
     
     
@@ -1180,6 +1186,11 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkQueueSubmit(vk.queue, 1, &compute_si, fence);
     vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
     vkResetFences(vk.device, 1, &fence);
+    // ---
+    
+    
+    
+    
     
     // Graphics
     VkShaderModule vert_module = GetShaderModule("../code/shader_vert.spv");
@@ -1209,20 +1220,20 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     VkVertexInputBindingDescription vertex_binding = {};
     vertex_binding.binding   = 0;
-    vertex_binding.stride    = 6 * sizeof(float);
+    vertex_binding.stride    = 5 * sizeof(float);
     vertex_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
     
     VkVertexInputAttributeDescription vert_description = {};
     vert_description.location = 0;
     vert_description.binding  = vertex_binding.binding;
-    vert_description.format   = VK_FORMAT_R32G32B32A32_SFLOAT;
+    vert_description.format   = VK_FORMAT_R32G32B32_SFLOAT;
     vert_description.offset   = 0;
     
     VkVertexInputAttributeDescription uv_description = {};
     uv_description.location = 1;
     uv_description.binding  = vertex_binding.binding;
     uv_description.format   = VK_FORMAT_R32G32_SFLOAT;
-    uv_description.offset   = 4 * sizeof(float);
+    uv_description.offset   = 3 * sizeof(float);
     
     VkVertexInputAttributeDescription vertex_attributes[] = { vert_description, uv_description };
     
@@ -1423,15 +1434,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     VkPhysicalDeviceMemoryProperties gpu_memprops;
     vkGetPhysicalDeviceMemoryProperties(vk.gpu, &gpu_memprops);
     
-    VkDeviceMemory staging_memory;
-    VkBuffer staging_buffer = CreateBuffer(10 * 1024 * 1024,
-                                           VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                           vk.device,
-                                           gpu_memprops,
-                                           &staging_memory);
-    
-    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     barrier.image = computed_image;
     
@@ -1489,8 +1492,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     u32 present_index = 0;
-    VkResult acqres = vkAcquireNextImageKHR(vk.device, vk.swapchain, UINT64_MAX, semaphore_acquired, NULL, &present_index);
-    ODS("Acquisition result: %s\n", RevEnum(vk_enums.result_enum, acqres));
+    result = vkAcquireNextImageKHR(vk.device, vk.swapchain, UINT64_MAX, semaphore_acquired, NULL, &present_index);
+    ODS_RES("Acquisition result: %s\n");
     
     vk.framebuffers = (VkFramebuffer *)calloc(2, sizeof(VkFramebuffer));
     
@@ -1511,7 +1514,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     VkDeviceMemory vertex_memory;
-    VkBuffer vertex_buffer = CreateBuffer(4 * 6 * sizeof(float),
+    VkBuffer vertex_buffer = CreateBuffer(4 * 5 * sizeof(float),
                                           VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                           vk.device,
@@ -1520,17 +1523,17 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     struct vertex
     {
-        r32 x, y, z, w, u, v;
+        r32 x, y, z, u, v;
     };
-    vertex v0 = { -1.0f, -1.0f, 0.0f, 1.0f,  0.0f, 0.0f };
-    vertex v1 = { -1.0f,  1.0f, 0.0f, 1.0f,  0.0f, 1.0f };
-    vertex v2 = {  1.0f, -1.0f, 0.0f, 1.0f,  1.0f, 0.0f };
-    vertex v3 = {  1.0f,  1.0f, 0.0f, 1.0f,  1.0f, 1.0f };
+    vertex v0 = { -1.0f, -1.0f, 0.0f, 0.0f, 0.0f };
+    vertex v1 = { -1.0f,  1.0f, 0.0f, 0.0f, 1.0f };
+    vertex v2 = {  1.0f, -1.0f, 0.0f, 1.0f, 0.0f };
+    vertex v3 = {  1.0f,  1.0f, 0.0f, 1.0f, 1.0f };
     vertex quad[] = { v0, v1, v2, v3 };
     
     void *vertex_mapptr;
     vkMapMemory(vk.device, vertex_memory, 0, VK_WHOLE_SIZE, 0, &vertex_mapptr);
-    memcpy(vertex_mapptr, quad, sizeof(float) * 6 * 4);
+    memcpy(vertex_mapptr, quad, sizeof(float) * 5 * 4);
     vkUnmapMemory(vk.device, vertex_memory);
     
     
@@ -1587,12 +1590,11 @@ int CALLBACK WinMain(HINSTANCE instance,
     si.commandBufferCount   = 1;
     si.pCommandBuffers      = &commandbuffer;
     vkQueueSubmit(vk.queue, 1, &si, fence_rendered);
-    VkResult res = vkWaitForFences(vk.device, 1, &fence_rendered, VK_TRUE, UINT64_MAX);
-    ODS("Render wait result: %s\n", RevEnum(vk_enums.result_enum, res));
+    result = vkWaitForFences(vk.device, 1, &fence_rendered, VK_TRUE, UINT64_MAX);
+    ODS_RES("Render wait result: %s\n");
     vkResetFences(vk.device, 1, &fence);
     
     
-    VkResult result;
     VkPresentInfoKHR pi = {};
     pi.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     pi.pNext              = NULL;
@@ -1603,7 +1605,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     pi.pImageIndices      = &present_index;
     pi.pResults           = &result;
     vkQueuePresentKHR(vk.queue, &pi);
-    ODS("Present result: %s\n", RevEnum(vk_enums.result_enum, result));
+    ODS_RES("Present result: %s\n");
     
 #if RD
     rdoc_api->EndFrameCapture(RD_device, app.window);
