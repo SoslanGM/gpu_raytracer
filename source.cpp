@@ -1022,7 +1022,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     // Resources
     // - open the rabbit
     // - load the vertexes
-    
+#if 0
+    // bunny
     char *bunny_file = "../assets/bunny.obj";
     ParsedOBJ bunny_obj = LoadOBJ(bunny_file);
     ParsedOBJRenderable bunny = bunny_obj.renderables[0];
@@ -1030,6 +1031,163 @@ int CALLBACK WinMain(HINSTANCE instance,
     ODS("Vertex count:      %d\n", bunny.vertex_count);
     ODS("Floats per vertex: %d\n", bunny.floats_per_vertex);
     ODS("Index count:       %d\n", bunny.index_count);
+    ODS("Triangle count:    %d\n", bunny.index_count/3);
+#endif
+    
+    // suzanne
+    char *suzanne_file = "../assets/suzanne.obj";
+    ParsedOBJ suzanne_obj = LoadOBJ(suzanne_file);
+    ParsedOBJRenderable suzanne = suzanne_obj.renderables[0];
+    
+    
+    ODS("Vertex count:      %d\n", suzanne.vertex_count);
+    ODS("Material count:    %d\n", suzanne_obj.material_library_count);
+    for(u32 i = 0; i < suzanne_obj.material_library_count; i++)
+        ODS("- material %d: %s\n", i, suzanne_obj.material_libraries[i]);
+    
+    ODS("Floats per vertex: %d\n", suzanne.floats_per_vertex);
+    ODS("Index count:       %d\n", suzanne.index_count);
+    ODS("Triangle count:    %d\n", suzanne.index_count/3);
+    ODS("\n");
+    
+    u32 vertex_datasize = (suzanne.vertex_count * suzanne.floats_per_vertex) / (1024);
+    ODS("Full memory size of vertex data: %d KB", vertex_datasize);
+    
+    
+#if 0
+    ODS("First 10 vertexes: \n");
+    for(u32 i = 0; i < 10; i++)
+    {
+        r32 x = suzanne.vertices[3*i];
+        r32 y = suzanne.vertices[3*i+1];
+        r32 z = suzanne.vertices[3*i+2];
+        ODS("%3d: [ %+-3.2f %+-3.2f %+-3.2f ]\n", i, x, y, z);
+    }
+    
+    ODS("First 10 xs: \n");
+    r32 xs[10];
+    for(u32 i = 0; i < 10; i++)
+    {
+        u32 offset = 0;
+        xs[i] = suzanne.vertices[3*i+offset];
+    }
+    ODS(" %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f \n",
+        xs[0], xs[1], xs[2], xs[3], xs[4], xs[5], xs[6], xs[7], xs[8], xs[9]);
+    
+    ODS("First 10 ys: \n");
+    r32 ys[10];
+    for(u32 i = 0; i < 10; i++)
+    {
+        u32 offset = 1;
+        ys[i] = suzanne.vertices[3*i+offset];
+    }
+    ODS(" %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f \n",
+        ys[0], ys[1], ys[2], ys[3], ys[4], ys[5], ys[6], ys[7], ys[8], ys[9]);
+    
+    ODS("First 10 zs: \n");
+    r32 zs[10];
+    for(u32 i = 0; i < 10; i++)
+    {
+        u32 offset = 2;
+        zs[i] = suzanne.vertices[3*i+offset];
+    }
+    
+    ODS(" %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f \n",
+        zs[0], zs[1], zs[2], zs[3], zs[4], zs[5], zs[6], zs[7], zs[8], zs[9]);
+    
+    exit(0);
+#endif
+    
+    u32 suzanne_tricount = suzanne.index_count / 3;
+    r32 *xs = (r32 *)malloc(suzanne_tricount * sizeof(r32));
+    r32 *ys = (r32 *)malloc(suzanne_tricount * sizeof(r32));
+    r32 *zs = (r32 *)malloc(suzanne_tricount * sizeof(r32));
+    for(u32 i = 0; i < suzanne_tricount; i++)
+    {
+        xs[i] = suzanne.vertices[3*i];
+        ys[i] = suzanne.vertices[3*i+1];
+        zs[i] = suzanne.vertices[3*i+2];
+    }
+    
+    
+    // print the values in groups of 32
+    ODS("XS: \n");
+    for(u32 i = 0; i < 16; i++)
+    {
+        u32 offset = 0;
+        ODS("%3d : %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f,  %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f,  %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f,  %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f \n",
+            i,
+            xs[32 * i],      xs[32 * i + 1],  xs[32 * i + 2],  xs[32 * i + 3], 
+            xs[32 * i + 4],  xs[32 * i + 5],  xs[32 * i + 6],  xs[32 * i + 7],
+            xs[32 * i + 8],  xs[32 * i + 9],  xs[32 * i + 10], xs[32 * i + 11], 
+            xs[32 * i + 12], xs[32 * i + 13], xs[32 * i + 14], xs[32 * i + 15],
+            xs[32 * i + 16], xs[32 * i + 17], xs[32 * i + 18], xs[32 * i + 19], 
+            xs[32 * i + 20], xs[32 * i + 21], xs[32 * i + 22], xs[32 * i + 23],
+            xs[32 * i + 24], xs[32 * i + 25], xs[32 * i + 26], xs[32 * i + 27], 
+            xs[32 * i + 28], xs[32 * i + 29], xs[32 * i + 30], xs[32 * i + 31]);
+        offset = 0;
+    }
+    
+    u32 compute_bufsize = 32;
+    
+    r32 max = 0.0f;
+    r32 min = 0.0f;
+    for(u32 i = 0; i < compute_bufsize; i++)
+    {
+        if(max < xs[i])
+            max = xs[i];
+        if(min > xs[i])
+            min = xs[i];
+    }
+    ODS("Max: %+-5.3f", max);
+    ODS("Min: %+-5.3f", min);
+    
+    r32 sum = 0.0f;
+    for(u32 i = 0; i < compute_bufsize; i++)
+    {
+        sum += xs[i];
+    }
+    ODS("Sum: %+-5.3f", sum);
+    
+    VkDeviceMemory xs_memory;
+    VkDeviceMemory ys_memory;
+    VkDeviceMemory zs_memory;
+    
+    
+    VkPhysicalDeviceMemoryProperties gpu_memprops;
+    vkGetPhysicalDeviceMemoryProperties(vk.gpu, &gpu_memprops);
+    
+    VkBuffer xs_buffer = CreateBuffer(sizeof(float) * compute_bufsize,
+                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                      vk.device, gpu_memprops,
+                                      &xs_memory);
+    VkBuffer ys_buffer = CreateBuffer(sizeof(float) * compute_bufsize,
+                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                      vk.device, gpu_memprops,
+                                      &ys_memory);
+    VkBuffer zs_buffer = CreateBuffer(sizeof(float) * compute_bufsize,
+                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                      vk.device, gpu_memprops,
+                                      &zs_memory);
+    
+    void *xs_mapptr;
+    vkMapMemory(vk.device, xs_memory, 0, VK_WHOLE_SIZE, 0, &xs_mapptr);
+    memcpy(xs_mapptr, xs, sizeof(float) * compute_bufsize);
+    vkUnmapMemory(vk.device, xs_memory);
+    
+    void *ys_mapptr;
+    vkMapMemory(vk.device, ys_memory, 0, VK_WHOLE_SIZE, 0, &ys_mapptr);
+    memcpy(ys_mapptr, ys, sizeof(float) * compute_bufsize);
+    vkUnmapMemory(vk.device, ys_memory);
+    
+    void *zs_mapptr;
+    vkMapMemory(vk.device, zs_memory, 0, VK_WHOLE_SIZE, 0, &zs_mapptr);
+    memcpy(zs_mapptr, zs, sizeof(float) * compute_bufsize);
+    vkUnmapMemory(vk.device, zs_memory);
+    
     
     // ---
     
@@ -1074,7 +1232,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
-    char *shader = "../code/shader_comp.spv";
+    //char *shader = "../code/shader_comp.spv";
+    char *shader = "../code/minmax_comp.spv";
     
     VkPipelineShaderStageCreateInfo stage_ci = {};
     stage_ci.sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -1088,7 +1247,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     VkDescriptorSetLayoutBinding binding = {};
     binding.binding            = 0;
-    binding.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    //binding.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    binding.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     binding.descriptorCount    = 1;
     binding.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
     binding.pImmutableSamplers = NULL;
@@ -1103,7 +1263,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkCreateDescriptorSetLayout(vk.device, &dsl_ci, NULL, &dslayout);
     
     VkDescriptorPoolSize dspool_size = {};
-    dspool_size.type            = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    //dspool_size.type            = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    dspool_size.type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     dspool_size.descriptorCount = 1;
     
     VkDescriptorPoolCreateInfo dspool_ci = {};
@@ -1147,6 +1308,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkCreateComputePipelines(vk.device, NULL, 1, &compipe_ci, NULL, &vk.compipe);
     
     
+#if 0
     VkDescriptorImageInfo computetexture_info = {};
     computetexture_info.sampler     = NULL;
     computetexture_info.imageView   = computed_imageview;
@@ -1163,16 +1325,36 @@ int CALLBACK WinMain(HINSTANCE instance,
     compute_write.pImageInfo       = &computetexture_info;
     compute_write.pBufferInfo      = NULL;
     compute_write.pTexelBufferView = NULL;
+#endif
+    VkDescriptorBufferInfo computebuffer_info = {};
+    computebuffer_info.buffer = xs_buffer;
+    computebuffer_info.offset = 0;
+    computebuffer_info.range  = VK_WHOLE_SIZE;
+    
+    VkWriteDescriptorSet compute_write = {};
+    compute_write.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    compute_write.pNext            = NULL;
+    compute_write.dstSet           = vk.dsl;
+    compute_write.dstBinding       = 0;
+    compute_write.dstArrayElement  = 0;
+    compute_write.descriptorCount  = 1;
+    compute_write.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compute_write.pImageInfo       = NULL;
+    compute_write.pBufferInfo      = &computebuffer_info;
+    compute_write.pTexelBufferView = NULL;
+    
     vkUpdateDescriptorSets(vk.device, 1, &compute_write, 0, NULL);
     
-    
+#if 0
     u32 xdim = ceil(r32(app.window_width) / 32.0f);
     u32 ydim = ceil(r32(app.window_height) / 32.0f);
+#endif
     
     vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
     vkCmdBindDescriptorSets(commandbuffer, VK_PIPELINE_BIND_POINT_COMPUTE, vk.pipelayout, 0, 1, &vk.dsl, 0, NULL);
     vkCmdBindPipeline(commandbuffer, VK_PIPELINE_BIND_POINT_COMPUTE, vk.compipe);
-    vkCmdDispatch(commandbuffer, xdim, ydim, 1);
+    //vkCmdDispatch(commandbuffer, xdim, ydim, 1);
+    vkCmdDispatch(commandbuffer, 1, 1, 1);
     vkEndCommandBuffer(commandbuffer);
     
     
@@ -1186,6 +1368,15 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkQueueSubmit(vk.queue, 1, &compute_si, fence);
     vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
     vkResetFences(vk.device, 1, &fence);
+    
+    // read results
+    void *res_mapptr;
+    vkMapMemory(vk.device, xs_memory, 0, VK_WHOLE_SIZE, 0, &res_mapptr);
+    r32 *res = (r32 *)malloc(sizeof(r32));
+    memcpy(res, (r32 *)res_mapptr, sizeof(r32));
+    ODS("Answer: %5.3f\n", *res);
+    
+    exit(0);
     // ---
     
     
@@ -1430,9 +1621,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
-    
-    VkPhysicalDeviceMemoryProperties gpu_memprops;
-    vkGetPhysicalDeviceMemoryProperties(vk.gpu, &gpu_memprops);
     
     barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;

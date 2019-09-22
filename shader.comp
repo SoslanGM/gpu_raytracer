@@ -9,10 +9,8 @@ layout (binding = 0, rgba8) uniform image2D data;
 
 void main()
 {
-    if(gl_GlobalInvocationID.x > WIDTH || gl_GlobalInvocationID.y > HEIGHT)
+    (gl_GlobalInvocationID.x > WIDTH || gl_GlobalInvocationID.y > HEIGHT)
         return;
-    
-    
     
     imageStore(data,
                ivec2(gl_GlobalInvocationID.xy),
