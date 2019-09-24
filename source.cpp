@@ -1111,11 +1111,13 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // print the values in groups of 32
+    r32 max_vals[16];
+    
     ODS("XS: \n");
     for(u32 i = 0; i < 16; i++)
     {
         u32 offset = 0;
-        ODS("%3d : %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f,  %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f,  %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f,  %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f, %+-5.3f \n",
+        ODS("%3d : %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f,  %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f,  %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f,  %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f \n",
             i,
             xs[32 * i],      xs[32 * i + 1],  xs[32 * i + 2],  xs[32 * i + 3], 
             xs[32 * i + 4],  xs[32 * i + 5],  xs[32 * i + 6],  xs[32 * i + 7],
@@ -1126,9 +1128,19 @@ int CALLBACK WinMain(HINSTANCE instance,
             xs[32 * i + 24], xs[32 * i + 25], xs[32 * i + 26], xs[32 * i + 27], 
             xs[32 * i + 28], xs[32 * i + 29], xs[32 * i + 30], xs[32 * i + 31]);
         offset = 0;
+        
+        max_vals[i] = 
+            xs[32 * i]      + xs[32 * i + 1]  + xs[32 * i + 2]  + xs[32 * i + 3]  + 
+            xs[32 * i + 4]  + xs[32 * i + 5]  + xs[32 * i + 6]  + xs[32 * i + 7]  +
+            xs[32 * i + 8]  + xs[32 * i + 9]  + xs[32 * i + 10] + xs[32 * i + 11] + 
+            xs[32 * i + 12] + xs[32 * i + 13] + xs[32 * i + 14] + xs[32 * i + 15] +
+            xs[32 * i + 16] + xs[32 * i + 17] + xs[32 * i + 18] + xs[32 * i + 19] + 
+            xs[32 * i + 20] + xs[32 * i + 21] + xs[32 * i + 22] + xs[32 * i + 23] +
+            xs[32 * i + 24] + xs[32 * i + 25] + xs[32 * i + 26] + xs[32 * i + 27] + 
+            xs[32 * i + 28] + xs[32 * i + 29] + xs[32 * i + 30] + xs[32 * i + 31];
     }
     
-    u32 compute_bufsize = 32;
+    u32 compute_bufsize = 512;
     
     r32 max = 0.0f;
     r32 min = 0.0f;
@@ -1139,15 +1151,21 @@ int CALLBACK WinMain(HINSTANCE instance,
         if(min > xs[i])
             min = xs[i];
     }
-    ODS("Max: %+-5.3f", max);
-    ODS("Min: %+-5.3f", min);
+    ODS("Max: %+-10.7f", max);
+    ODS("Min: %+-10.7f", min);
     
     r32 sum = 0.0f;
     for(u32 i = 0; i < compute_bufsize; i++)
     {
         sum += xs[i];
     }
-    ODS("Sum: %+-5.3f", sum);
+    
+    for(u32 i = 0; i < 16; i++)
+    {
+        ODS("Sum %2d: %+-10.7f\n", i, max_vals[i]);
+    }
+    
+    ODS("Total sum: %+-10.7f", sum);
     
     VkDeviceMemory xs_memory;
     VkDeviceMemory ys_memory;
@@ -1232,8 +1250,38 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
+    u32 block_size = 32;
+    
     //char *shader = "../code/shader_comp.spv";
     char *shader = "../code/minmax_comp.spv";
+    
+    VkSpecializationMapEntry spec_map_entry_x = {};
+    spec_map_entry_x.constantID = 0;
+    spec_map_entry_x.offset     = 0;
+    spec_map_entry_x.size       = sizeof(u32);
+    
+    VkSpecializationMapEntry spec_map_entry_y = {};
+    spec_map_entry_y.constantID = 1;
+    spec_map_entry_y.offset     = 1 * sizeof(u32);
+    spec_map_entry_y.size       = sizeof(u32);
+    
+    VkSpecializationMapEntry spec_map_entry_z = {};
+    spec_map_entry_z.constantID = 2;
+    spec_map_entry_z.offset     = 2 * sizeof(u32);
+    spec_map_entry_z.size       = sizeof(u32);
+    
+    VkSpecializationMapEntry spec_map_entries[] = { spec_map_entry_x, spec_map_entry_y, spec_map_entry_z };
+    
+    u32 *spec_entry_values = (u32 *)malloc(3 * sizeof(u32));
+    spec_entry_values[0] = block_size;
+    spec_entry_values[1] = 1;
+    spec_entry_values[2] = 1;
+    
+    VkSpecializationInfo spec_const = {};
+    spec_const.mapEntryCount = 3;
+    spec_const.pMapEntries   = spec_map_entries;
+    spec_const.dataSize      = 3 * sizeof(u32);
+    spec_const.pData         = spec_entry_values;
     
     VkPipelineShaderStageCreateInfo stage_ci = {};
     stage_ci.sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -1242,7 +1290,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     stage_ci.stage               = VK_SHADER_STAGE_COMPUTE_BIT;
     stage_ci.module              = GetShaderModule(shader);
     stage_ci.pName               = "main";
-    stage_ci.pSpecializationInfo = NULL;
+    stage_ci.pSpecializationInfo = &spec_const;
     
     
     VkDescriptorSetLayoutBinding binding = {};
@@ -1350,10 +1398,23 @@ int CALLBACK WinMain(HINSTANCE instance,
     u32 ydim = ceil(r32(app.window_height) / 32.0f);
 #endif
     
+    VkMemoryBarrier dispatch_barrier = {};
+    dispatch_barrier.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    dispatch_barrier.pNext         = NULL;
+    dispatch_barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+    dispatch_barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    
     vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
     vkCmdBindDescriptorSets(commandbuffer, VK_PIPELINE_BIND_POINT_COMPUTE, vk.pipelayout, 0, 1, &vk.dsl, 0, NULL);
     vkCmdBindPipeline(commandbuffer, VK_PIPELINE_BIND_POINT_COMPUTE, vk.compipe);
     //vkCmdDispatch(commandbuffer, xdim, ydim, 1);
+    vkCmdDispatch(commandbuffer, compute_bufsize/32, 1, 1);
+    vkCmdPipelineBarrier(commandbuffer,
+                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         0,
+                         1, &dispatch_barrier,
+                         0, NULL,
+                         0, NULL);
     vkCmdDispatch(commandbuffer, 1, 1, 1);
     vkEndCommandBuffer(commandbuffer);
     
@@ -1370,11 +1431,21 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkResetFences(vk.device, 1, &fence);
     
     // read results
+    u32 answer_size = compute_bufsize/32;
+    //u32 answer_size = 1;
+    
     void *res_mapptr;
     vkMapMemory(vk.device, xs_memory, 0, VK_WHOLE_SIZE, 0, &res_mapptr);
-    r32 *res = (r32 *)malloc(sizeof(r32));
-    memcpy(res, (r32 *)res_mapptr, sizeof(r32));
-    ODS("Answer: %5.3f\n", *res);
+    r32 *res = (r32 *)malloc(answer_size * sizeof(r32));
+    memcpy(res, (r32 *)res_mapptr, answer_size * sizeof(r32));
+    
+    //ODS("Final answer: %+-10.7f\n", *res);
+#if 1
+    for(u32 i = 0; i < compute_bufsize/32; i++)
+    {
+        ODS("Answer %2d: %+-10.7f\n", i, res[i]);
+    }
+#endif
     
     exit(0);
     // ---

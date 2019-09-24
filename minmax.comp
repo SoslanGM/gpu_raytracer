@@ -1,0 +1,43 @@
+#version 450 core
+
+//layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+layout (local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+layout (std430, binding = 0) buffer Val
+{
+    float values[];
+};
+
+shared float shmem[gl_WorkGroupSize.x];
+
+void main()
+{
+    uint local_index = gl_LocalInvocationID.x;
+    uint global_index = gl_GlobalInvocationID.x;
+    /*
+    uint current_block = gl_WorkGroupID.x;
+    uint blocks_total = gl_NumWorkGroups.x;
+    
+    if(current_block == (blocks_total-1) &&
+       (local_index > lastblock_threadcount))
+        return;
+    */
+    
+    // Load into shared memory, sync
+    shmem[local_index] = values[global_index];
+    barrier();
+    
+    // Get the max of 32, 5 stride-increasing compares
+    for(uint i = 1; i < gl_WorkGroupSize.x; i *= 2)
+    {
+        uint index = 2 * i * local_index;
+        if(index < gl_WorkGroupSize.x)
+            shmem[index] += shmem[index + i];
+        //shmem[index] = max(shmem[index], shmem[index + i]);
+        barrier();
+    }
+    
+    // Write result back into global memory
+    // - every first thread writes its global index back to the global memory.
+    if(local_index == 0)
+        values[gl_WorkGroupID.x] = shmem[local_index];
+}
