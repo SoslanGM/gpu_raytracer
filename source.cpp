@@ -825,6 +825,74 @@ u8 *ReadImage(char *filename, u32 *width, u32 *height)
 }
 
 
+
+void CheckGPUFeatures()
+{
+    VkPhysicalDeviceFeatures gpu_features;
+    vkGetPhysicalDeviceFeatures(vk.gpu, &gpu_features);
+    
+    // This was previously generated with a metaprogramming utility.
+    // To be showcased in a future portfolio entry :)
+    ODS("- %-40s: %s\n", "robustBufferAccess", (gpu_features.robustBufferAccess & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "fullDrawIndexUint32", (gpu_features.fullDrawIndexUint32 & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "imageCubeArray", (gpu_features.imageCubeArray & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "independentBlend", (gpu_features.independentBlend & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "geometryShader", (gpu_features.geometryShader & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "tessellationShader", (gpu_features.tessellationShader & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "sampleRateShading", (gpu_features.sampleRateShading & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "dualSrcBlend", (gpu_features.dualSrcBlend & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "logicOp", (gpu_features.logicOp & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "multiDrawIndirect", (gpu_features.multiDrawIndirect & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "drawIndirectFirstInstance", (gpu_features.drawIndirectFirstInstance & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "depthClamp", (gpu_features.depthClamp & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "depthBiasClamp", (gpu_features.depthBiasClamp & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "fillModeNonSolid", (gpu_features.fillModeNonSolid & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "depthBounds", (gpu_features.depthBounds & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "wideLines", (gpu_features.wideLines & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "largePoints", (gpu_features.largePoints & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "alphaToOne", (gpu_features.alphaToOne & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "multiViewport", (gpu_features.multiViewport & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "samplerAnisotropy", (gpu_features.samplerAnisotropy & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "textureCompressionETC2", (gpu_features.textureCompressionETC2 & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "textureCompressionASTC_LDR", (gpu_features.textureCompressionASTC_LDR & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "textureCompressionBC", (gpu_features.textureCompressionBC & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "occlusionQueryPrecise", (gpu_features.occlusionQueryPrecise & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "pipelineStatisticsQuery", (gpu_features.pipelineStatisticsQuery & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "vertexPipelineStoresAndAtomics", (gpu_features.vertexPipelineStoresAndAtomics & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "fragmentStoresAndAtomics", (gpu_features.fragmentStoresAndAtomics & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "shaderTessellationAndGeometryPointSize", (gpu_features.shaderTessellationAndGeometryPointSize & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "shaderImageGatherExtended", (gpu_features.shaderImageGatherExtended & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "shaderStorageImageExtendedFormats", (gpu_features.shaderStorageImageExtendedFormats & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "shaderStorageImageMultisample", (gpu_features.shaderStorageImageMultisample & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "shaderStorageImageReadWithoutFormat", (gpu_features.shaderStorageImageReadWithoutFormat & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "shaderStorageImageWriteWithoutFormat", (gpu_features.shaderStorageImageWriteWithoutFormat & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "shaderUniformBufferArrayDynamicIndexing", (gpu_features.shaderUniformBufferArrayDynamicIndexing & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "shaderSampledImageArrayDynamicIndexing", (gpu_features.shaderSampledImageArrayDynamicIndexing & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "shaderStorageBufferArrayDynamicIndexing", (gpu_features.shaderStorageBufferArrayDynamicIndexing & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "shaderStorageImageArrayDynamicIndexing", (gpu_features.shaderStorageImageArrayDynamicIndexing & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "shaderClipDistance", (gpu_features.shaderClipDistance & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "shaderCullDistance", (gpu_features.shaderCullDistance & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "shaderFloat64", (gpu_features.shaderFloat64 & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "shaderInt64", (gpu_features.shaderInt64 & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "shaderInt16", (gpu_features.shaderInt16 & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "shaderResourceResidency", (gpu_features.shaderResourceResidency & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "shaderResourceMinLod", (gpu_features.shaderResourceMinLod & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "sparseBinding", (gpu_features.sparseBinding & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "sparseResidencyBuffer", (gpu_features.sparseResidencyBuffer & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "sparseResidencyImage2D", (gpu_features.sparseResidencyImage2D & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "sparseResidencyImage3D", (gpu_features.sparseResidencyImage3D & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "sparseResidency2Samples", (gpu_features.sparseResidency2Samples & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "sparseResidency4Samples", (gpu_features.sparseResidency4Samples & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "sparseResidency8Samples", (gpu_features.sparseResidency8Samples & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "sparseResidency16Samples", (gpu_features.sparseResidency16Samples & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "sparseResidencyAliased", (gpu_features.sparseResidencyAliased & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "variableMultisampleRate", (gpu_features.variableMultisampleRate & 1) ? "YES" : "NO");
+    ODS("- %-40s: %s\n", "inheritedQueries", (gpu_features.inheritedQueries & 1) ? "YES" : "NO");
+    ODS("\n");
+}
+
+
+
 #define RD 0
 
 int CALLBACK WinMain(HINSTANCE instance,
@@ -902,6 +970,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     SetupDebugging();
     GetGPU();
+    
+    CheckGPUFeatures();
     
     CreateSurface();
     
@@ -1051,7 +1121,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     ODS("\n");
     
     u32 vertex_datasize = (suzanne.vertex_count * suzanne.floats_per_vertex) / (1024);
-    ODS("Full memory size of vertex data: %d KB", vertex_datasize);
+    ODS("Full memory size of vertex data: %d KB\n", vertex_datasize);
     
     
 #if 0
@@ -1111,6 +1181,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // print the values in groups of 32
+#if 0
     r32 max_vals[16];
     
     ODS("XS: \n");
@@ -1140,8 +1211,6 @@ int CALLBACK WinMain(HINSTANCE instance,
             xs[32 * i + 28] + xs[32 * i + 29] + xs[32 * i + 30] + xs[32 * i + 31];
     }
     
-    u32 compute_bufsize = 512;
-    
     r32 max = 0.0f;
     r32 min = 0.0f;
     for(u32 i = 0; i < compute_bufsize; i++)
@@ -1151,8 +1220,8 @@ int CALLBACK WinMain(HINSTANCE instance,
         if(min > xs[i])
             min = xs[i];
     }
-    ODS("Max: %+-10.7f", max);
-    ODS("Min: %+-10.7f", min);
+    ODS("Max: %+-10.7f\n", max);
+    ODS("Min: %+-10.7f\n", min);
     
     r32 sum = 0.0f;
     for(u32 i = 0; i < compute_bufsize; i++)
@@ -1165,7 +1234,30 @@ int CALLBACK WinMain(HINSTANCE instance,
         ODS("Sum %2d: %+-10.7f\n", i, max_vals[i]);
     }
     
-    ODS("Total sum: %+-10.7f", sum);
+    ODS("Total sum: %+-10.7f\n", sum);
+#endif
+    
+    u32 compute_bufsize = 512;
+    //u32 compute_bufsize = suzanne_tricount;
+    
+    
+    r32 x_max, x_min, y_max, y_min, z_max, z_min;
+    x_max =  y_max =  z_max = -100.0f;
+    x_min =  y_min =  z_min =  100.0f;
+    
+    for(u32 i = 0; i < suzanne_tricount; i++)
+    {
+        if(xs[i] > x_max) x_max = xs[i];
+        if(ys[i] > y_max) y_max = ys[i];
+        if(zs[i] > z_max) z_max = zs[i];
+        
+        if(xs[i] < x_min) x_min = xs[i];
+        if(ys[i] < y_min) y_min = ys[i];
+        if(zs[i] < z_min) z_min = zs[i];
+    }
+    ODS("X: [%+-10.7f ; %+-10.7f]\n", x_min, x_max);
+    ODS("Y: [%+-10.7f ; %+-10.7f]\n", y_min, y_max);
+    ODS("Z: [%+-10.7f ; %+-10.7f]\n", z_min, z_max);
     
     VkDeviceMemory xs_memory;
     VkDeviceMemory ys_memory;
@@ -1255,34 +1347,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     //char *shader = "../code/shader_comp.spv";
     char *shader = "../code/minmax_comp.spv";
     
-    VkSpecializationMapEntry spec_map_entry_x = {};
-    spec_map_entry_x.constantID = 0;
-    spec_map_entry_x.offset     = 0;
-    spec_map_entry_x.size       = sizeof(u32);
-    
-    VkSpecializationMapEntry spec_map_entry_y = {};
-    spec_map_entry_y.constantID = 1;
-    spec_map_entry_y.offset     = 1 * sizeof(u32);
-    spec_map_entry_y.size       = sizeof(u32);
-    
-    VkSpecializationMapEntry spec_map_entry_z = {};
-    spec_map_entry_z.constantID = 2;
-    spec_map_entry_z.offset     = 2 * sizeof(u32);
-    spec_map_entry_z.size       = sizeof(u32);
-    
-    VkSpecializationMapEntry spec_map_entries[] = { spec_map_entry_x, spec_map_entry_y, spec_map_entry_z };
-    
-    u32 *spec_entry_values = (u32 *)malloc(3 * sizeof(u32));
-    spec_entry_values[0] = block_size;
-    spec_entry_values[1] = 1;
-    spec_entry_values[2] = 1;
-    
-    VkSpecializationInfo spec_const = {};
-    spec_const.mapEntryCount = 3;
-    spec_const.pMapEntries   = spec_map_entries;
-    spec_const.dataSize      = 3 * sizeof(u32);
-    spec_const.pData         = spec_entry_values;
-    
     VkPipelineShaderStageCreateInfo stage_ci = {};
     stage_ci.sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     stage_ci.pNext               = NULL;
@@ -1290,36 +1354,49 @@ int CALLBACK WinMain(HINSTANCE instance,
     stage_ci.stage               = VK_SHADER_STAGE_COMPUTE_BIT;
     stage_ci.module              = GetShaderModule(shader);
     stage_ci.pName               = "main";
-    stage_ci.pSpecializationInfo = &spec_const;
+    stage_ci.pSpecializationInfo = NULL;
     
+    VkDescriptorSetLayoutBinding binding_x = {};
+    binding_x.binding            = 0;
+    binding_x.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    binding_x.descriptorCount    = 1;
+    binding_x.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+    binding_x.pImmutableSamplers = NULL;
     
-    VkDescriptorSetLayoutBinding binding = {};
-    binding.binding            = 0;
-    //binding.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    binding.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    binding.descriptorCount    = 1;
-    binding.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    binding.pImmutableSamplers = NULL;
+    VkDescriptorSetLayoutBinding binding_y = {};
+    binding_y.binding            = 1;
+    binding_y.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    binding_y.descriptorCount    = 1;
+    binding_y.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+    binding_y.pImmutableSamplers = NULL;
+    
+    VkDescriptorSetLayoutBinding binding_z = {};
+    binding_z.binding            = 2;
+    binding_z.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    binding_z.descriptorCount    = 1;
+    binding_z.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+    binding_z.pImmutableSamplers = NULL;
+    
+    VkDescriptorSetLayoutBinding bindings[] = { binding_x, binding_y, binding_z };
     
     VkDescriptorSetLayoutCreateInfo dsl_ci = {};
     dsl_ci.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     dsl_ci.pNext        = NULL;
     dsl_ci.flags        = 0;
-    dsl_ci.bindingCount = 1;
-    dsl_ci.pBindings    = &binding;
+    dsl_ci.bindingCount = 3;
+    dsl_ci.pBindings    = bindings;
     VkDescriptorSetLayout dslayout;
     vkCreateDescriptorSetLayout(vk.device, &dsl_ci, NULL, &dslayout);
     
     VkDescriptorPoolSize dspool_size = {};
-    //dspool_size.type            = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     dspool_size.type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    dspool_size.descriptorCount = 1;
+    dspool_size.descriptorCount = 3;
     
     VkDescriptorPoolCreateInfo dspool_ci = {};
     dspool_ci.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     dspool_ci.pNext         = NULL;
     dspool_ci.flags         = 0;
-    dspool_ci.maxSets       = 1;
+    dspool_ci.maxSets       = 3;
     dspool_ci.poolSizeCount = 1;
     dspool_ci.pPoolSizes    = &dspool_size;
     VkDescriptorPool dspool;
@@ -1333,14 +1410,19 @@ int CALLBACK WinMain(HINSTANCE instance,
     dsl_ai.pSetLayouts        = &dslayout;
     vkAllocateDescriptorSets(vk.device, &dsl_ai, &vk.dsl);
     
+    VkPushConstantRange pcr = {};
+    pcr.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    pcr.offset     = 0;
+    pcr.size       = 3 * sizeof(u32);
+    
     VkPipelineLayoutCreateInfo layout_ci = {};
     layout_ci.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     layout_ci.pNext                  = NULL;
     layout_ci.flags                  = 0;
     layout_ci.setLayoutCount         = 1;
     layout_ci.pSetLayouts            = &dslayout;
-    layout_ci.pushConstantRangeCount = 0;
-    layout_ci.pPushConstantRanges    = NULL;
+    layout_ci.pushConstantRangeCount = 1;
+    layout_ci.pPushConstantRanges    = &pcr;
     vkCreatePipelineLayout(vk.device, &layout_ci, NULL, &vk.pipelayout);
     
     
@@ -1374,24 +1456,64 @@ int CALLBACK WinMain(HINSTANCE instance,
     compute_write.pBufferInfo      = NULL;
     compute_write.pTexelBufferView = NULL;
 #endif
-    VkDescriptorBufferInfo computebuffer_info = {};
-    computebuffer_info.buffer = xs_buffer;
-    computebuffer_info.offset = 0;
-    computebuffer_info.range  = VK_WHOLE_SIZE;
     
-    VkWriteDescriptorSet compute_write = {};
-    compute_write.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    compute_write.pNext            = NULL;
-    compute_write.dstSet           = vk.dsl;
-    compute_write.dstBinding       = 0;
-    compute_write.dstArrayElement  = 0;
-    compute_write.descriptorCount  = 1;
-    compute_write.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compute_write.pImageInfo       = NULL;
-    compute_write.pBufferInfo      = &computebuffer_info;
-    compute_write.pTexelBufferView = NULL;
+    VkDescriptorBufferInfo x_buffer_info = {};
+    x_buffer_info.buffer = xs_buffer;
+    x_buffer_info.offset = 0;
+    x_buffer_info.range  = VK_WHOLE_SIZE;
     
-    vkUpdateDescriptorSets(vk.device, 1, &compute_write, 0, NULL);
+    VkWriteDescriptorSet write_x = {};
+    write_x.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write_x.pNext            = NULL;
+    write_x.dstSet           = vk.dsl;
+    write_x.dstBinding       = 0;
+    write_x.dstArrayElement  = 0;
+    write_x.descriptorCount  = 1;
+    write_x.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    write_x.pImageInfo       = NULL;
+    write_x.pBufferInfo      = &x_buffer_info;
+    write_x.pTexelBufferView = NULL;
+    
+    
+    VkDescriptorBufferInfo y_buffer_info = {};
+    y_buffer_info.buffer = ys_buffer;
+    y_buffer_info.offset = 0;
+    y_buffer_info.range  = VK_WHOLE_SIZE;
+    
+    VkWriteDescriptorSet write_y = {};
+    write_y.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write_y.pNext            = NULL;
+    write_y.dstSet           = vk.dsl;
+    write_y.dstBinding       = 1;
+    write_y.dstArrayElement  = 0;
+    write_y.descriptorCount  = 1;
+    write_y.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    write_y.pImageInfo       = NULL;
+    write_y.pBufferInfo      = &y_buffer_info;
+    write_y.pTexelBufferView = NULL;
+    
+    
+    VkDescriptorBufferInfo z_buffer_info = {};
+    z_buffer_info.buffer = zs_buffer;
+    z_buffer_info.offset = 0;
+    z_buffer_info.range  = VK_WHOLE_SIZE;
+    
+    VkWriteDescriptorSet write_z = {};
+    write_z.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write_z.pNext            = NULL;
+    write_z.dstSet           = vk.dsl;
+    write_z.dstBinding       = 2;
+    write_z.dstArrayElement  = 0;
+    write_z.descriptorCount  = 1;
+    write_z.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    write_z.pImageInfo       = NULL;
+    write_z.pBufferInfo      = &z_buffer_info;
+    write_z.pTexelBufferView = NULL;
+    
+    
+    VkWriteDescriptorSet compute_writes[] = { write_x, write_y, write_z };
+    
+    vkUpdateDescriptorSets(vk.device, 3, compute_writes, 0, NULL);
     
 #if 0
     u32 xdim = ceil(r32(app.window_width) / 32.0f);
@@ -1407,17 +1529,50 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
     vkCmdBindDescriptorSets(commandbuffer, VK_PIPELINE_BIND_POINT_COMPUTE, vk.pipelayout, 0, 1, &vk.dsl, 0, NULL);
     vkCmdBindPipeline(commandbuffer, VK_PIPELINE_BIND_POINT_COMPUTE, vk.compipe);
-    //vkCmdDispatch(commandbuffer, xdim, ydim, 1);
-    vkCmdDispatch(commandbuffer, compute_bufsize/32, 1, 1);
-    vkCmdPipelineBarrier(commandbuffer,
-                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         0,
-                         1, &dispatch_barrier,
-                         0, NULL,
-                         0, NULL);
-    vkCmdDispatch(commandbuffer, 1, 1, 1);
-    vkEndCommandBuffer(commandbuffer);
     
+    
+    // --- This entire block is riddled with dangerous floaty maths.
+    u32 thread_count = suzanne_tricount;
+    u32 block_count = (u32)ceil((r32)thread_count / (r32)block_size);
+    
+    struct 
+    {
+        u32 thread_count;
+        u32 read_offset;
+        u32 write_offset;
+    } controls;
+    controls.thread_count = suzanne_tricount;
+    controls.read_offset  = (u32)ceil((r32)block_count / (r32)block_size) * block_size;
+    controls.write_offset = 0;
+    
+    ODS("Dispatch: %5d threads, %4d blocks\n", thread_count, block_count);
+    vkCmdPushConstants(commandbuffer, vk.pipelayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(controls), &controls);  // is sizeof(controls) 12?
+    vkCmdDispatch(commandbuffer, block_count, 1, 1);
+    for(; thread_count > 1; )  // or thread_count > 1?
+    {
+        thread_count = ceil((r32)thread_count / (r32)block_size);
+        
+        vkCmdPipelineBarrier(commandbuffer,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             0,
+                             1, &dispatch_barrier,
+                             0, NULL,
+                             0, NULL);
+        u32 offset = (u32)ceil((r32)block_count / (r32)block_size) * block_size;
+        ODS("- offset: %4d\n", offset);
+        
+        block_count = ceil((r32)thread_count / (r32)block_size);
+        ODS("Dispatch: %5d threads, %4d blocks\n", thread_count, block_count);
+        
+        controls.thread_count = thread_count;
+        controls.read_offset  = offset;
+        controls.write_offset = offset;
+        
+        vkCmdPushConstants(commandbuffer, vk.pipelayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(controls), &controls);
+        vkCmdDispatch(commandbuffer, block_count, 1, 1);
+    }
+    vkEndCommandBuffer(commandbuffer);
+    // ---
     
     
     VkSubmitInfo compute_si = {};
@@ -1431,23 +1586,45 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkResetFences(vk.device, 1, &fence);
     
     // read results
-    u32 answer_size = compute_bufsize/32;
-    //u32 answer_size = 1;
+    //u32 answer_size = compute_bufsize/32;
     
-    void *res_mapptr;
-    vkMapMemory(vk.device, xs_memory, 0, VK_WHOLE_SIZE, 0, &res_mapptr);
-    r32 *res = (r32 *)malloc(answer_size * sizeof(r32));
-    memcpy(res, (r32 *)res_mapptr, answer_size * sizeof(r32));
-    
-    //ODS("Final answer: %+-10.7f\n", *res);
 #if 1
-    for(u32 i = 0; i < compute_bufsize/32; i++)
-    {
-        ODS("Answer %2d: %+-10.7f\n", i, res[i]);
-    }
-#endif
+    u32 answer_size = 2;
+    
+    void *x_res_mapptr;
+    vkMapMemory(vk.device, xs_memory, 0, VK_WHOLE_SIZE, 0, &x_res_mapptr);
+    r32 *x_res = (r32 *)malloc(answer_size * sizeof(r32));
+    memcpy(x_res, (r32 *)x_res_mapptr, answer_size * sizeof(r32));
+    vkUnmapMemory(vk.device, xs_memory);
+    
+    void *y_res_mapptr;
+    vkMapMemory(vk.device, ys_memory, 0, VK_WHOLE_SIZE, 0, &y_res_mapptr);
+    r32 *y_res = (r32 *)malloc(answer_size * sizeof(r32));
+    memcpy(y_res, (r32 *)y_res_mapptr, answer_size * sizeof(r32));
+    vkUnmapMemory(vk.device, ys_memory);
+    
+    void *z_res_mapptr;
+    vkMapMemory(vk.device, zs_memory, 0, VK_WHOLE_SIZE, 0, &z_res_mapptr);
+    r32 *z_res = (r32 *)malloc(answer_size * sizeof(r32));
+    memcpy(z_res, (r32 *)z_res_mapptr, answer_size * sizeof(r32));
+    vkUnmapMemory(vk.device, zs_memory);
+    
+    
+    x_max = xs[0];
+    x_min = xs[1];
+    y_max = ys[0];
+    y_min = ys[1];
+    z_max = zs[0];
+    z_min = zs[1];
+    
+    ODS("Trumpets: compute result\n");
+    ODS("X: [%+-10.7f ; %+-10.7f]\n", x_min, x_max);
+    ODS("Y: [%+-10.7f ; %+-10.7f]\n", y_min, y_max);
+    ODS("Z: [%+-10.7f ; %+-10.7f]\n", z_min, z_max);
     
     exit(0);
+#endif
+    
     // ---
     
     

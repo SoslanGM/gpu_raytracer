@@ -1,43 +1,82 @@
 #version 450 core
 
-//layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
-layout (local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
-layout (std430, binding = 0) buffer Val
+layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+layout (push_constant) uniform controls
 {
-    float values[];
+    uint thread_count;  // an even number. It's been padded, if odd.
+    uint read_offset;   // 0, then padded wave_size
+    uint write_offset;  // padded wave_size;
 };
 
-shared float shmem[gl_WorkGroupSize.x];
+// inputs
+// -- These are all the same size. Since it's all different components of 
+//  coordinates of the same model, it's fine. 
+layout (std430, binding = 0) buffer xval {
+    float x_values[];
+};
+layout (std430, binding = 1) buffer yval {
+    float y_values[];
+};
+layout (std430, binding = 2) buffer zval { 
+    float z_values[];
+};
+
+shared float shared_max_x[gl_WorkGroupSize.x];
+shared float shared_max_y[gl_WorkGroupSize.x];
+shared float shared_max_z[gl_WorkGroupSize.x];
+shared float shared_min_x[gl_WorkGroupSize.x];
+shared float shared_min_y[gl_WorkGroupSize.x];
+shared float shared_min_z[gl_WorkGroupSize.x];
 
 void main()
 {
-    uint local_index = gl_LocalInvocationID.x;
+    // Prep
     uint global_index = gl_GlobalInvocationID.x;
-    /*
-    uint current_block = gl_WorkGroupID.x;
-    uint blocks_total = gl_NumWorkGroups.x;
-    
-    if(current_block == (blocks_total-1) &&
-       (local_index > lastblock_threadcount))
+    if(global_index > thread_count)
         return;
-    */
     
-    // Load into shared memory, sync
-    shmem[local_index] = values[global_index];
+    uint block_size  = gl_WorkGroupSize.x;
+    uint local_index = gl_LocalInvocationID.x;
+    uint block_index = gl_WorkGroupID.x;
+    
+    
+    // Load into shared memory
+    shared_max_x[local_index] = x_values[global_index];
+    shared_min_x[local_index] = x_values[global_index+read_offset];
+    shared_max_y[local_index] = y_values[global_index];
+    shared_min_y[local_index] = y_values[global_index+read_offset];
+    shared_max_z[local_index] = z_values[global_index];
+    shared_min_z[local_index] = z_values[global_index+read_offset];
     barrier();
     
-    // Get the max of 32, 5 stride-increasing compares
-    for(uint i = 1; i < gl_WorkGroupSize.x; i *= 2)
+    // Reductions
+    for(uint i = 1; i < block_size; i *= 2)
     {
         uint index = 2 * i * local_index;
-        if(index < gl_WorkGroupSize.x)
-            shmem[index] += shmem[index + i];
-        //shmem[index] = max(shmem[index], shmem[index + i]);
+        
+        if(index < block_size)
+        {
+            shared_max_x[index] = max(shared_max_x[index], shared_max_x[index + i]);
+            shared_max_y[index] = max(shared_max_y[index], shared_max_y[index + i]);
+            shared_max_z[index] = max(shared_max_z[index], shared_max_z[index + i]);
+            
+            shared_min_x[index] = min(shared_min_x[index], shared_min_x[index + i]);
+            shared_min_y[index] = min(shared_min_y[index], shared_min_y[index + i]);
+            shared_min_z[index] = min(shared_min_z[index], shared_min_z[index + i]);
+        }
         barrier();
     }
     
-    // Write result back into global memory
-    // - every first thread writes its global index back to the global memory.
+    // Finally write the value
     if(local_index == 0)
-        values[gl_WorkGroupID.x] = shmem[local_index];
+    {
+        x_values[block_index]              = shared_max_x[local_index];
+        x_values[block_index+write_offset] = shared_min_x[local_index];
+        
+        y_values[block_index]              = shared_max_y[local_index];
+        y_values[block_index+write_offset] = shared_min_y[local_index];
+        
+        z_values[block_index]              = shared_max_z[local_index];
+        z_values[block_index+write_offset] = shared_min_z[local_index];
+    }
 }
