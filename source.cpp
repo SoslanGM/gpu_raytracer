@@ -981,6 +981,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     };
     u32 dev_ext_count = sizeof(dev_ext_names) / sizeof(dev_ext_names[0]);
     VkPhysicalDeviceFeatures features = {};
+    features.robustBufferAccess = true;
     GetVulkanDevice(dev_ext_names, dev_ext_count, features);
     ODS("Here's a Vulkan device:   0x%p\n", &vk.device);
     
