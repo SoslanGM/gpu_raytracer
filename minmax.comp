@@ -18,40 +18,26 @@ layout (std430, binding = 2) buffer zval { float z_values[]; };
 shared float shared_max_x[gl_WorkGroupSize.x];
 shared float shared_max_y[gl_WorkGroupSize.x];
 shared float shared_max_z[gl_WorkGroupSize.x];
+
 shared float shared_min_x[gl_WorkGroupSize.x];
 shared float shared_min_y[gl_WorkGroupSize.x];
 shared float shared_min_z[gl_WorkGroupSize.x];
 
 
 
-void StrideSum(uint stride, uint limit)
-{
-    uint step = 2 * stride;
-    for(uint i = 0; i < (limit / step); i+= step)
-    {
-        shared_max_x[i] += shared_max_x[i+stride];
-        shared_max_y[i] += shared_max_y[i+stride];
-        shared_max_z[i] += shared_max_z[i+stride];
-        
-        shared_min_x[i] += shared_min_x[i+stride];
-        shared_min_y[i] += shared_min_y[i+stride];
-        shared_min_z[i] += shared_min_z[i+stride];
-        barrier();
-    }
-}
-
 void main()
 {
     uint global_index = gl_GlobalInvocationID.x;
     
-    if(global_index > thread_count)
+    if(global_index >= thread_count)
     {
-        x_values[global_index] = 0.0f;
-        x_values[global_index+read_offset] = 0.0f;
-        y_values[global_index] = 0.0f;
-        y_values[global_index+read_offset] = 0.0f;
-        z_values[global_index] = 0.0f;
-        z_values[global_index+read_offset] = 0.0f;
+        x_values[global_index]             = x_values[thread_count];
+        y_values[global_index]             = y_values[thread_count];
+        z_values[global_index]             = z_values[thread_count];
+        
+        x_values[global_index+read_offset] = x_values[thread_count];
+        y_values[global_index+read_offset] = y_values[thread_count];
+        z_values[global_index+read_offset] = z_values[thread_count];
     }
     barrier();
     memoryBarrierBuffer();
@@ -63,193 +49,48 @@ void main()
     
     // Load into shared memory
     shared_max_x[local_index] = x_values[global_index];
-    shared_min_x[local_index] = x_values[global_index+read_offset];
     shared_max_y[local_index] = y_values[global_index];
-    shared_min_y[local_index] = y_values[global_index+read_offset];
     shared_max_z[local_index] = z_values[global_index];
+    
+    shared_min_x[local_index] = x_values[global_index+read_offset];
+    shared_min_y[local_index] = y_values[global_index+read_offset];
     shared_min_z[local_index] = z_values[global_index+read_offset];
+    
+    
     barrier();
     memoryBarrierShared();
     
     // Reductions
     // - loop version
-#if 1
     for(uint i = 1; i < block_size; i *= 2)
     {
         uint index = 2 * i * local_index;
         
         if(index < block_size)
         {
-            /*
-                        shared_max_x[index] = max(shared_max_x[index], shared_max_x[index + i]);
-                        shared_max_y[index] = max(shared_max_y[index], shared_max_y[index + i]);
-                        shared_max_z[index] = max(shared_max_z[index], shared_max_z[index + i]);
-                        
-                        shared_min_x[index] = min(shared_min_x[index], shared_min_x[index + i]);
-                        shared_min_y[index] = min(shared_min_y[index], shared_min_y[index + i]);
-                        shared_min_z[index] = min(shared_min_z[index], shared_min_z[index + i]);
-            */
+            shared_max_x[index] = max(shared_max_x[index], shared_max_x[index + i]);
+            shared_max_y[index] = max(shared_max_y[index], shared_max_y[index + i]);
+            shared_max_z[index] = max(shared_max_z[index], shared_max_z[index + i]);
             
-            shared_max_x[index] += shared_max_x[index + i];
-            shared_max_y[index] += shared_max_y[index + i];
-            shared_max_z[index] += shared_max_z[index + i];
-            
-            shared_min_x[index] -= shared_min_x[index + i];
-            shared_min_y[index] -= shared_min_y[index + i];
-            shared_min_z[index] -= shared_min_z[index + i];
+            shared_min_x[index] = min(shared_min_x[index], shared_min_x[index + i]);
+            shared_min_y[index] = min(shared_min_y[index], shared_min_y[index + i]);
+            shared_min_z[index] = min(shared_min_z[index], shared_min_z[index + i]);
         }
+        
         barrier();
         memoryBarrierShared();
     }
-#endif
-    
-    /* First wave
-    
-      1  2  3  4  5 - iterations
-    ----------------
-    0  0  0  0  0  0
-    1  
-    2  2  
-    3  
-    4  4  4
-    5  
-    6  6  
-    7  
-    8  8  8  8
-    9  
-    10 10 
-    11 
-    12 12 12
-    13 
-    14 14
-    15 
-    16 16 16 16 16
-    17 
-    18 18
-    19 
-    20 20 20
-    21 
-    22 22
-    23 
-    24 24 24 24
-    25 
-    26 26
-    27 
-    28 28 28
-    29 
-    30 30
-    31 
-    */
-    
-    /* Second wave
-    this_block_thread_count = 
-    iteration_count = log(this_block_thread_count) == log(4) = 2
-    
-        1  2 - iterations
-    -------
-0  0  0
-    1  
-    2  2  
-    3  
-    */
-    
-    /* Third wave
-    this_block_thread_count = 16
-    iteration_count = log(16) = 4
-    
-    1  2  3  4 - iterations
-    -------------
-    0  0  0  0  0
-    1  
-    2  2  
-    3  
-    4  4  4
-    5  
-    6  6  
-    7  
-    8  8  8  8
-    9  
-    10 10 
-    11 
-    12 12 12
-    13 
-    14 14
-    15 
-    */
-    
-#if 0
-    uint thread_limit = min(thread_count - block_size*block_count, block_size);
-    uint iter_count = uint(log2(thread_limit));
-    for(uint i = 0, stride = 1; i < iter_count; i++, stride *= 2)
-        StrideSum(stride, thread_limit);
-#endif
-    
-#if 0
-    // - linear form
-    // stride=1(2^0)
-    shared_max_x[0]  += shared_max_x[1];
-    shared_max_x[2]  += shared_max_x[3];
-    // 2nd wave cutoff
-    shared_max_x[4]  += shared_max_x[5];
-    shared_max_x[6]  += shared_max_x[7];
-    shared_max_x[8]  += shared_max_x[9];
-    shared_max_x[10] += shared_max_x[11];
-    shared_max_x[12] += shared_max_x[13];
-    shared_max_x[14] += shared_max_x[15];
-    // 3rd wave cutoff
-    shared_max_x[16] += shared_max_x[17];
-    shared_max_x[18] += shared_max_x[19];
-    shared_max_x[20] += shared_max_x[21];
-    shared_max_x[22] += shared_max_x[23];
-    shared_max_x[24] += shared_max_x[25];
-    shared_max_x[26] += shared_max_x[27];
-    shared_max_x[28] += shared_max_x[29];
-    shared_max_x[30] += shared_max_x[31];
-    barrier();
-    
-    // stride=2(2^1)
-    shared_max_x[0]  += shared_max_x[2];
-    // 2nd wave cutoff
-    shared_max_x[4]  += shared_max_x[6];
-    shared_max_x[8]  += shared_max_x[10];
-    shared_max_x[12] += shared_max_x[14];
-    // 3rd wave cutoff
-    shared_max_x[16] += shared_max_x[18];
-    shared_max_x[20] += shared_max_x[22];
-    shared_max_x[24] += shared_max_x[26];
-    shared_max_x[28] += shared_max_x[30];
-    barrier();
-    
-    // stride=4(2^2)
-    shared_max_x[0]  += shared_max_x[4];
-    shared_max_x[8]  += shared_max_x[12];
-    // 3rd wave cutoff
-    shared_max_x[16] += shared_max_x[20];
-    shared_max_x[24] += shared_max_x[28];
-    barrier();
-    
-    // stride=8(2^3)
-    shared_max_x[0]  += shared_max_x[8];
-    // 3rd wave cutoff
-    shared_max_x[16] += shared_max_x[24];
-    barrier();
-    
-    // stride=16(2^4)
-    shared_max_x[0]  += shared_max_x[16];
-    barrier();
-#endif
     
     
     // Write results back
     if(local_index == 0)
     {
         x_values[block_index]              = shared_max_x[local_index];
-        x_values[block_index+write_offset] = shared_min_x[local_index];
-        
         y_values[block_index]              = shared_max_y[local_index];
-        y_values[block_index+write_offset] = shared_min_y[local_index];
-        
         z_values[block_index]              = shared_max_z[local_index];
+        
+        x_values[block_index+write_offset] = shared_min_x[local_index];
+        y_values[block_index+write_offset] = shared_min_y[local_index];
         z_values[block_index+write_offset] = shared_min_z[local_index];
     }
 }

@@ -1125,50 +1125,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     ODS("Full memory size of vertex data: %d KB\n", vertex_datasize);
     
     
-#if 0
-    ODS("First 10 vertexes: \n");
-    for(u32 i = 0; i < 10; i++)
-    {
-        r32 x = suzanne.vertices[3*i];
-        r32 y = suzanne.vertices[3*i+1];
-        r32 z = suzanne.vertices[3*i+2];
-        ODS("%3d: [ %+-3.2f %+-3.2f %+-3.2f ]\n", i, x, y, z);
-    }
-    
-    ODS("First 10 xs: \n");
-    r32 xs[10];
-    for(u32 i = 0; i < 10; i++)
-    {
-        u32 offset = 0;
-        xs[i] = suzanne.vertices[3*i+offset];
-    }
-    ODS(" %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f \n",
-        xs[0], xs[1], xs[2], xs[3], xs[4], xs[5], xs[6], xs[7], xs[8], xs[9]);
-    
-    ODS("First 10 ys: \n");
-    r32 ys[10];
-    for(u32 i = 0; i < 10; i++)
-    {
-        u32 offset = 1;
-        ys[i] = suzanne.vertices[3*i+offset];
-    }
-    ODS(" %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f \n",
-        ys[0], ys[1], ys[2], ys[3], ys[4], ys[5], ys[6], ys[7], ys[8], ys[9]);
-    
-    ODS("First 10 zs: \n");
-    r32 zs[10];
-    for(u32 i = 0; i < 10; i++)
-    {
-        u32 offset = 2;
-        zs[i] = suzanne.vertices[3*i+offset];
-    }
-    
-    ODS(" %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f %+-3.2f \n",
-        zs[0], zs[1], zs[2], zs[3], zs[4], zs[5], zs[6], zs[7], zs[8], zs[9]);
-    
-    exit(0);
-#endif
-    
+    // - making room for each of coord components
     u32 suzanne_tricount = suzanne.index_count / 3;
     r32 *xs = (r32 *)malloc(suzanne_tricount * sizeof(r32));
     r32 *ys = (r32 *)malloc(suzanne_tricount * sizeof(r32));
@@ -1181,101 +1138,35 @@ int CALLBACK WinMain(HINSTANCE instance,
     }
     
     
-    // print the values in groups of 32
-#if 0
-    r32 max_vals[16];
-    
-    ODS("XS: \n");
-    for(u32 i = 0; i < 16; i++)
-    {
-        u32 offset = 0;
-        ODS("%3d : %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f,  %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f,  %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f,  %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f, %+-10.7f \n",
-            i,
-            xs[32 * i],      xs[32 * i + 1],  xs[32 * i + 2],  xs[32 * i + 3], 
-            xs[32 * i + 4],  xs[32 * i + 5],  xs[32 * i + 6],  xs[32 * i + 7],
-            xs[32 * i + 8],  xs[32 * i + 9],  xs[32 * i + 10], xs[32 * i + 11], 
-            xs[32 * i + 12], xs[32 * i + 13], xs[32 * i + 14], xs[32 * i + 15],
-            xs[32 * i + 16], xs[32 * i + 17], xs[32 * i + 18], xs[32 * i + 19], 
-            xs[32 * i + 20], xs[32 * i + 21], xs[32 * i + 22], xs[32 * i + 23],
-            xs[32 * i + 24], xs[32 * i + 25], xs[32 * i + 26], xs[32 * i + 27], 
-            xs[32 * i + 28], xs[32 * i + 29], xs[32 * i + 30], xs[32 * i + 31]);
-        offset = 0;
-        
-        max_vals[i] = 
-            xs[32 * i]      + xs[32 * i + 1]  + xs[32 * i + 2]  + xs[32 * i + 3]  + 
-            xs[32 * i + 4]  + xs[32 * i + 5]  + xs[32 * i + 6]  + xs[32 * i + 7]  +
-            xs[32 * i + 8]  + xs[32 * i + 9]  + xs[32 * i + 10] + xs[32 * i + 11] + 
-            xs[32 * i + 12] + xs[32 * i + 13] + xs[32 * i + 14] + xs[32 * i + 15] +
-            xs[32 * i + 16] + xs[32 * i + 17] + xs[32 * i + 18] + xs[32 * i + 19] + 
-            xs[32 * i + 20] + xs[32 * i + 21] + xs[32 * i + 22] + xs[32 * i + 23] +
-            xs[32 * i + 24] + xs[32 * i + 25] + xs[32 * i + 26] + xs[32 * i + 27] + 
-            xs[32 * i + 28] + xs[32 * i + 29] + xs[32 * i + 30] + xs[32 * i + 31];
-    }
-    
-    r32 max = 0.0f;
-    r32 min = 0.0f;
-    for(u32 i = 0; i < compute_bufsize; i++)
-    {
-        if(max < xs[i])
-            max = xs[i];
-        if(min > xs[i])
-            min = xs[i];
-    }
-    ODS("Max: %+-10.7f\n", max);
-    ODS("Min: %+-10.7f\n", min);
-    
-    r32 sum = 0.0f;
-    for(u32 i = 0; i < compute_bufsize; i++)
-    {
-        sum += xs[i];
-    }
-    
-    for(u32 i = 0; i < 16; i++)
-    {
-        ODS("Sum %2d: %+-10.7f\n", i, max_vals[i]);
-    }
-    
-    ODS("Total sum: %+-10.7f\n", sum);
-#endif
-    
     //u32 compute_bufsize = 512;
     u32 compute_bufsize = suzanne_tricount;
     
     r32 x_max, x_min, y_max, y_min, z_max, z_min;
-    x_max =  y_max =  z_max = 0.0f;
-    x_min =  y_min =  z_min = 0.0f;
+    x_max =  y_max =  z_max = -10000.0f;
+    x_min =  y_min =  z_min =  10000.0f;
     
-#if 0
-    r32 x_max, x_min, y_max, y_min, z_max, z_min;
-    x_max =  y_max =  z_max = -100.0f;
-    x_min =  y_min =  z_min =  100.0f;
+    u32 block_size = 32;
+    
     
     for(u32 i = 0; i < suzanne_tricount; i++)
     {
-        if(xs[i] > x_max) x_max = xs[i];
-        if(ys[i] > y_max) y_max = ys[i];
-        if(zs[i] > z_max) z_max = zs[i];
+        if(x_min > xs[i]) x_min = xs[i];
+        if(y_min > ys[i]) y_min = ys[i];
+        if(z_min > zs[i]) z_min = zs[i];
         
-        if(xs[i] < x_min) x_min = xs[i];
-        if(ys[i] < y_min) y_min = ys[i];
-        if(zs[i] < z_min) z_min = zs[i];
+        if(x_max < xs[i]) x_max = xs[i];
+        if(y_max < ys[i]) y_max = ys[i];
+        if(z_max < zs[i]) z_max = zs[i];
     }
-    ODS("X: [%+-10.7f ; %+-10.7f]\n", x_min, x_max);
-    ODS("Y: [%+-10.7f ; %+-10.7f]\n", y_min, y_max);
-    ODS("Z: [%+-10.7f ; %+-10.7f]\n", z_min, z_max);
-#endif
+    ODS("AABB: \n");
+    ODS("X: [ %+-7.3f | %+-7.3f ]\n", x_min, x_max);
+    ODS("Y: [ %+-7.3f | %+-7.3f ]\n", y_min, y_max);
+    ODS("Z: [ %+-7.3f | %+-7.3f ]\n", z_min, z_max);
     
-    r32 x_sum, y_sum, z_sum;
-    x_sum = y_sum = z_sum = 0.0f;
-    for(u32 i = 0; i < suzanne_tricount; i++)
-    {
-        x_sum += xs[i];
-        y_sum += ys[i];
-        z_sum += zs[i];
-    }
-    ODS("X: %+-10.7f\n", x_sum);
-    ODS("Y: %+-10.7f\n", y_sum);
-    ODS("Z: %+-10.7f\n", z_sum);
+    
+    
+    
+    
     
     VkDeviceMemory xs_memory;
     VkDeviceMemory ys_memory;
@@ -1303,17 +1194,17 @@ int CALLBACK WinMain(HINSTANCE instance,
     void *xs_mapptr;
     vkMapMemory(vk.device, xs_memory, 0, VK_WHOLE_SIZE, 0, &xs_mapptr);
     memcpy(xs_mapptr, xs, sizeof(float) * compute_bufsize);
-    vkUnmapMemory(vk.device, xs_memory);
+    //vkUnmapMemory(vk.device, xs_memory);
     
     void *ys_mapptr;
     vkMapMemory(vk.device, ys_memory, 0, VK_WHOLE_SIZE, 0, &ys_mapptr);
     memcpy(ys_mapptr, ys, sizeof(float) * compute_bufsize);
-    vkUnmapMemory(vk.device, ys_memory);
+    //vkUnmapMemory(vk.device, ys_memory);
     
     void *zs_mapptr;
     vkMapMemory(vk.device, zs_memory, 0, VK_WHOLE_SIZE, 0, &zs_mapptr);
     memcpy(zs_mapptr, zs, sizeof(float) * compute_bufsize);
-    vkUnmapMemory(vk.device, zs_memory);
+    //vkUnmapMemory(vk.device, zs_memory);
     
     
     // ---
@@ -1359,7 +1250,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // - pipeline and resources
-    u32 block_size = 32;
+    //u32 block_size = 32;
     
     //char *shader = "../code/shader_comp.spv";
     char *shader = "../code/minmax_comp.spv";
@@ -1605,36 +1496,37 @@ int CALLBACK WinMain(HINSTANCE instance,
 #if 1
     u32 answer_range = 32 + 1;
     
+    r32 *x_res = (r32 *)malloc(answer_range * sizeof(r32));
+    memcpy(x_res, (r32 *)xs_mapptr, answer_range * sizeof(r32));
+    
+    r32 *y_res = (r32 *)malloc(answer_range * sizeof(r32));
+    memcpy(y_res, (r32 *)ys_mapptr, answer_range * sizeof(r32));
+    
+    r32 *z_res = (r32 *)malloc(answer_range * sizeof(r32));
+    memcpy(z_res, (r32 *)zs_mapptr, answer_range * sizeof(r32));
+    /*
     void *x_res_mapptr;
     vkMapMemory(vk.device, xs_memory, 0, VK_WHOLE_SIZE, 0, &x_res_mapptr);
-    r32 *x_res = (r32 *)malloc(answer_range * sizeof(r32));
-    memcpy(x_res, (r32 *)x_res_mapptr, answer_range * sizeof(r32));
     vkUnmapMemory(vk.device, xs_memory);
     
     void *y_res_mapptr;
     vkMapMemory(vk.device, ys_memory, 0, VK_WHOLE_SIZE, 0, &y_res_mapptr);
-    r32 *y_res = (r32 *)malloc(answer_range * sizeof(r32));
-    memcpy(y_res, (r32 *)y_res_mapptr, answer_range * sizeof(r32));
     vkUnmapMemory(vk.device, ys_memory);
     
     void *z_res_mapptr;
     vkMapMemory(vk.device, zs_memory, 0, VK_WHOLE_SIZE, 0, &z_res_mapptr);
-    r32 *z_res = (r32 *)malloc(answer_range * sizeof(r32));
-    memcpy(z_res, (r32 *)z_res_mapptr, answer_range * sizeof(r32));
     vkUnmapMemory(vk.device, zs_memory);
+    */
     
     ODS("Trumpets: compute result\n");
 #if 1
-    x_max = x_res[0];
-    x_min = x_res[32];
-    y_max = y_res[0];
-    y_min = y_res[32];
-    z_max = z_res[0];
-    z_min = z_res[32];
+    x_max = x_res[0]; x_min = x_res[32];
+    y_max = y_res[0]; y_min = y_res[32];
+    z_max = z_res[0]; z_min = z_res[32];
     
-    ODS("X: [%+-10.7f ; %+-10.7f]\n", x_max, x_min);
-    ODS("Y: [%+-10.7f ; %+-10.7f]\n", y_max, y_min);
-    ODS("Z: [%+-10.7f ; %+-10.7f]\n", z_max, z_min);
+    ODS("X: [ %+-7.3f | %+-7.3f ]\n", x_min, x_max);
+    ODS("Y: [ %+-7.3f | %+-7.3f ]\n", y_min, y_max);
+    ODS("Z: [ %+-7.3f | %+-7.3f ]\n", z_min, z_max);
 #endif
     
     exit(0);
