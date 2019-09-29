@@ -1237,10 +1237,14 @@ int CALLBACK WinMain(HINSTANCE instance,
     ODS("Total sum: %+-10.7f\n", sum);
 #endif
     
-    u32 compute_bufsize = 512;
-    //u32 compute_bufsize = suzanne_tricount;
+    //u32 compute_bufsize = 512;
+    u32 compute_bufsize = suzanne_tricount;
     
+    r32 x_max, x_min, y_max, y_min, z_max, z_min;
+    x_max =  y_max =  z_max = 0.0f;
+    x_min =  y_min =  z_min = 0.0f;
     
+#if 0
     r32 x_max, x_min, y_max, y_min, z_max, z_min;
     x_max =  y_max =  z_max = -100.0f;
     x_min =  y_min =  z_min =  100.0f;
@@ -1258,11 +1262,23 @@ int CALLBACK WinMain(HINSTANCE instance,
     ODS("X: [%+-10.7f ; %+-10.7f]\n", x_min, x_max);
     ODS("Y: [%+-10.7f ; %+-10.7f]\n", y_min, y_max);
     ODS("Z: [%+-10.7f ; %+-10.7f]\n", z_min, z_max);
+#endif
+    
+    r32 x_sum, y_sum, z_sum;
+    x_sum = y_sum = z_sum = 0.0f;
+    for(u32 i = 0; i < suzanne_tricount; i++)
+    {
+        x_sum += xs[i];
+        y_sum += ys[i];
+        z_sum += zs[i];
+    }
+    ODS("X: %+-10.7f\n", x_sum);
+    ODS("Y: %+-10.7f\n", y_sum);
+    ODS("Z: %+-10.7f\n", z_sum);
     
     VkDeviceMemory xs_memory;
     VkDeviceMemory ys_memory;
     VkDeviceMemory zs_memory;
-    
     
     VkPhysicalDeviceMemoryProperties gpu_memprops;
     vkGetPhysicalDeviceMemoryProperties(vk.gpu, &gpu_memprops);
@@ -1306,6 +1322,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // Compute
+    // - prepare a render target 
     VkImage computed_image;
     VkImageView computed_imageview;
     VkDeviceMemory computed_imagememory;
@@ -1340,8 +1357,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
-    
-    
+    // - pipeline and resources
     u32 block_size = 32;
     
     //char *shader = "../code/shader_comp.spv";
@@ -1542,13 +1558,13 @@ int CALLBACK WinMain(HINSTANCE instance,
         u32 write_offset;
     } controls;
     controls.thread_count = suzanne_tricount;
-    controls.read_offset  = (u32)ceil((r32)block_count / (r32)block_size) * block_size;
-    controls.write_offset = 0;
+    controls.read_offset  = 0;
+    controls.write_offset = (u32)ceil((r32)block_count / (r32)block_size) * block_size;
     
-    ODS("Dispatch: %5d threads, %4d blocks\n", thread_count, block_count);
+    ODS("Dispatch: %5d threads, %4d blocks; [offsets r:%4d | w:%4d]\n", thread_count, block_count, controls.read_offset, controls.write_offset);
     vkCmdPushConstants(commandbuffer, vk.pipelayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(controls), &controls);  // is sizeof(controls) 12?
     vkCmdDispatch(commandbuffer, block_count, 1, 1);
-    for(; thread_count > 1; )  // or thread_count > 1?
+    for(; block_count > 1; )
     {
         thread_count = ceil((r32)thread_count / (r32)block_size);
         
@@ -1558,15 +1574,12 @@ int CALLBACK WinMain(HINSTANCE instance,
                              1, &dispatch_barrier,
                              0, NULL,
                              0, NULL);
-        u32 offset = (u32)ceil((r32)block_count / (r32)block_size) * block_size;
-        ODS("- offset: %4d\n", offset);
         
         block_count = ceil((r32)thread_count / (r32)block_size);
-        ODS("Dispatch: %5d threads, %4d blocks\n", thread_count, block_count);
-        
         controls.thread_count = thread_count;
-        controls.read_offset  = offset;
-        controls.write_offset = offset;
+        controls.read_offset  = controls.write_offset;
+        controls.write_offset = ceil((r32)block_count / 32.0f) * 32;
+        ODS("Dispatch: %5d threads, %4d blocks; [offsets r:%4d | w:%4d]\n", thread_count, block_count, controls.read_offset, controls.write_offset);
         
         vkCmdPushConstants(commandbuffer, vk.pipelayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(controls), &controls);
         vkCmdDispatch(commandbuffer, block_count, 1, 1);
@@ -1589,38 +1602,39 @@ int CALLBACK WinMain(HINSTANCE instance,
     //u32 answer_size = compute_bufsize/32;
     
 #if 1
-    u32 answer_size = 2;
+    u32 answer_range = 32 + 1;
     
     void *x_res_mapptr;
     vkMapMemory(vk.device, xs_memory, 0, VK_WHOLE_SIZE, 0, &x_res_mapptr);
-    r32 *x_res = (r32 *)malloc(answer_size * sizeof(r32));
-    memcpy(x_res, (r32 *)x_res_mapptr, answer_size * sizeof(r32));
+    r32 *x_res = (r32 *)malloc(answer_range * sizeof(r32));
+    memcpy(x_res, (r32 *)x_res_mapptr, answer_range * sizeof(r32));
     vkUnmapMemory(vk.device, xs_memory);
     
     void *y_res_mapptr;
     vkMapMemory(vk.device, ys_memory, 0, VK_WHOLE_SIZE, 0, &y_res_mapptr);
-    r32 *y_res = (r32 *)malloc(answer_size * sizeof(r32));
-    memcpy(y_res, (r32 *)y_res_mapptr, answer_size * sizeof(r32));
+    r32 *y_res = (r32 *)malloc(answer_range * sizeof(r32));
+    memcpy(y_res, (r32 *)y_res_mapptr, answer_range * sizeof(r32));
     vkUnmapMemory(vk.device, ys_memory);
     
     void *z_res_mapptr;
     vkMapMemory(vk.device, zs_memory, 0, VK_WHOLE_SIZE, 0, &z_res_mapptr);
-    r32 *z_res = (r32 *)malloc(answer_size * sizeof(r32));
-    memcpy(z_res, (r32 *)z_res_mapptr, answer_size * sizeof(r32));
+    r32 *z_res = (r32 *)malloc(answer_range * sizeof(r32));
+    memcpy(z_res, (r32 *)z_res_mapptr, answer_range * sizeof(r32));
     vkUnmapMemory(vk.device, zs_memory);
     
-    
-    x_max = xs[0];
-    x_min = xs[1];
-    y_max = ys[0];
-    y_min = ys[1];
-    z_max = zs[0];
-    z_min = zs[1];
-    
     ODS("Trumpets: compute result\n");
-    ODS("X: [%+-10.7f ; %+-10.7f]\n", x_min, x_max);
-    ODS("Y: [%+-10.7f ; %+-10.7f]\n", y_min, y_max);
-    ODS("Z: [%+-10.7f ; %+-10.7f]\n", z_min, z_max);
+#if 1
+    x_max = x_res[0];
+    x_min = x_res[32];
+    y_max = y_res[0];
+    y_min = y_res[32];
+    z_max = z_res[0];
+    z_min = z_res[32];
+    
+    ODS("X: [%+-10.7f ; %+-10.7f]\n", x_max, x_min);
+    ODS("Y: [%+-10.7f ; %+-10.7f]\n", y_max, y_min);
+    ODS("Z: [%+-10.7f ; %+-10.7f]\n", z_max, z_min);
+#endif
     
     exit(0);
 #endif

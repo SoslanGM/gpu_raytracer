@@ -30,7 +30,6 @@ shared float shared_min_z[gl_WorkGroupSize.x];
 
 void main()
 {
-    // Prep
     uint global_index = gl_GlobalInvocationID.x;
     if(global_index > thread_count)
         return;
@@ -38,7 +37,7 @@ void main()
     uint block_size  = gl_WorkGroupSize.x;
     uint local_index = gl_LocalInvocationID.x;
     uint block_index = gl_WorkGroupID.x;
-    
+    uint block_count = gl_NumWorkGroups.x;
     
     // Load into shared memory
     shared_max_x[local_index] = x_values[global_index];
@@ -56,18 +55,27 @@ void main()
         
         if(index < block_size)
         {
-            shared_max_x[index] = max(shared_max_x[index], shared_max_x[index + i]);
-            shared_max_y[index] = max(shared_max_y[index], shared_max_y[index + i]);
-            shared_max_z[index] = max(shared_max_z[index], shared_max_z[index + i]);
+            /*
+                        shared_max_x[index] = max(shared_max_x[index], shared_max_x[index + i]);
+                        shared_max_y[index] = max(shared_max_y[index], shared_max_y[index + i]);
+                        shared_max_z[index] = max(shared_max_z[index], shared_max_z[index + i]);
+                        
+                        shared_min_x[index] = min(shared_min_x[index], shared_min_x[index + i]);
+                        shared_min_y[index] = min(shared_min_y[index], shared_min_y[index + i]);
+                        shared_min_z[index] = min(shared_min_z[index], shared_min_z[index + i]);
+            */
+            shared_max_x[index] += shared_max_x[index + i];
+            shared_max_y[index] += shared_max_y[index + i];
+            shared_max_z[index] += shared_max_z[index + i];
             
-            shared_min_x[index] = min(shared_min_x[index], shared_min_x[index + i]);
-            shared_min_y[index] = min(shared_min_y[index], shared_min_y[index + i]);
-            shared_min_z[index] = min(shared_min_z[index], shared_min_z[index + i]);
+            shared_min_x[index] -= shared_min_x[index + i];
+            shared_min_y[index] -= shared_min_y[index + i];
+            shared_min_z[index] -= shared_min_z[index + i];
         }
         barrier();
     }
     
-    // Finally write the value
+    // Write results back
     if(local_index == 0)
     {
         x_values[block_index]              = shared_max_x[local_index];
