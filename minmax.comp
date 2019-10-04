@@ -29,6 +29,7 @@ void main()
 {
     uint global_index = gl_GlobalInvocationID.x;
     
+    // pad the excess
     if(global_index >= thread_count)
     {
         x_values[global_index]             = x_values[thread_count];

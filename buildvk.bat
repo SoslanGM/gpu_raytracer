@@ -6,6 +6,7 @@ pushd ..\build
 ::glslangValidator -V ..\code\shader.comp -o ..\code\shader_comp.spv
 ::glslangValidator -H ..\code\minmax.comp -o ..\code\minmax_comp.spv > ..\code\asm.txt
 glslangValidator -V ..\code\minmax.comp -o ..\code\minmax_comp.spv
+glslangValidator -V ..\code\centroidmorton.comp -o ..\code\centroidmorton.spv
 glslangValidator -V ..\code\shader.vert -o ..\code\shader_vert.spv
 glslangValidator -V ..\code\shader.frag -o ..\code\shader_frag.spv
 

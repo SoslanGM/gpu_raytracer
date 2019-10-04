@@ -72,4 +72,5 @@ X(vkFreeMemory) \
 X(vkGetFenceStatus) \
 X(vkGetPhysicalDeviceQueueFamilyProperties2) \
 X(vkCreateComputePipelines) \
-X(vkCmdDispatch)
+X(vkCmdDispatch) \
+X(vkGetDescriptorSetLayoutSupport)
