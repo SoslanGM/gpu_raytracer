@@ -1569,20 +1569,20 @@ int CALLBACK WinMain(HINSTANCE instance,
     } vertex3;
     typedef struct
     {
-        vertex3 lower;
-        vertex3 upper;
-    } AABB;
+        r32 x, y, z;
+        u32 pad;
+    } vertex3_padded;
+    
     typedef struct
     {
-#if 1
-        vertex3 centroid;
-        AABB bounding_box;
+        vertex3_padded lower;
+        vertex3_padded upper;
+    } AABB_padded;
+    typedef struct
+    {
+        vertex3 cen;
         u32 morton_code;
-#endif
-#if 0
-        u32 i0, i1, i2;
-        r32 v0_x, v0_y, v0_z, v1_x, v1_y, v1_z, v2_x, v2_y, v2_z;
-#endif
+        AABB_padded bounding_box;
     } bvhdata;
     
     
@@ -1609,41 +1609,42 @@ int CALLBACK WinMain(HINSTANCE instance,
         r32 v2_y = model.vertices[8*i2+1];
         r32 v2_z = model.vertices[8*i2+2];
         
-#if 0
-        step2_cpu[i].i0 = i0;
-        step2_cpu[i].i1 = i1;
-        step2_cpu[i].i2 = i2;
-        
-        step2_cpu[i].v0_x = v0_x;
-        step2_cpu[i].v0_y = v0_y;
-        step2_cpu[i].v0_z = v0_z;
-        
-        step2_cpu[i].v1_x = v1_x;
-        step2_cpu[i].v1_y = v1_y;
-        step2_cpu[i].v1_z = v1_z;
-        
-        step2_cpu[i].v2_x = v2_x;
-        step2_cpu[i].v2_y = v2_y;
-        step2_cpu[i].v2_z = v2_z;
-#endif
         // centroid
         r32 cen_x = (v0_x + v1_x + v2_x)/3.0f;
         r32 cen_y = (v0_y + v1_y + v2_y)/3.0f;
         r32 cen_z = (v0_z + v1_z + v2_z)/3.0f;
         
-        // map to [0;1023]
+        step2_cpu[i].cen.x = cen_x;
+        step2_cpu[i].cen.y = cen_y;
+        step2_cpu[i].cen.z = cen_z;
+        
+        // map to [0;1023], calculate the Morton code
         r32 new_range = 1023.0f;
-        u32 morton_x = (u32)floor((cen_x+x_min)*(new_range/x_range));
-        u32 morton_y = (u32)floor((cen_y+y_min)*(new_range/y_range));
-        u32 morton_z = (u32)floor((cen_z+z_min)*(new_range/z_range));
-        
+        u32 morton_x = (u32)floor((cen_x+abs(x_min))*(new_range/x_range));
+        u32 morton_y = (u32)floor((cen_y+abs(y_min))*(new_range/y_range));
+        u32 morton_z = (u32)floor((cen_z+abs(z_min))*(new_range/z_range));
         u32 morton = EncodeMorton3(morton_x, morton_y, morton_z);
-        
-        // calculate the morton code
-        step2_cpu[i].centroid.x = cen_x;
-        step2_cpu[i].centroid.y = cen_y;
-        step2_cpu[i].centroid.z = cen_z;
         step2_cpu[i].morton_code = morton;
+        
+        // AABB
+        r32 lower_x = min(min(v0_x, v1_x), v2_x);
+        r32 lower_y = min(min(v0_y, v1_y), v2_y);
+        r32 lower_z = min(min(v0_z, v1_z), v2_z);
+        
+        r32 upper_x = max(max(v0_x, v1_x), v2_x);
+        r32 upper_y = max(max(v0_y, v1_y), v2_y);
+        r32 upper_z = max(max(v0_z, v1_z), v2_z);
+        
+        
+        step2_cpu[i].bounding_box.lower.x   = lower_x;
+        step2_cpu[i].bounding_box.lower.y   = lower_y;
+        step2_cpu[i].bounding_box.lower.z   = lower_z;
+        step2_cpu[i].bounding_box.lower.pad = 0;
+        
+        step2_cpu[i].bounding_box.upper.x   = upper_x;
+        step2_cpu[i].bounding_box.upper.y   = upper_y;
+        step2_cpu[i].bounding_box.upper.z   = upper_z;
+        step2_cpu[i].bounding_box.upper.pad = 0;
     }
     //exit(0);
     
@@ -1900,22 +1901,35 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkUnmapMemory(vk.device, model_bvhdata_memory);
     
     
-    // auto-check
+    
+    // precision difference check
 #if 0
     for(u32 i = 0; i < model_tricount; i++)
     {
-        if(step2_cpu[i].i0 != step2_data[i].i0 ||
-           step2_cpu[i].i1 != step2_data[i].i1 ||
-           step2_cpu[i].i2 != step2_data[i].i2 ||
-           step2_cpu[i].v0_x != step2_data[i].v0_x ||
-           step2_cpu[i].v0_y != step2_data[i].v0_y ||
-           step2_cpu[i].v0_z != step2_data[i].v0_z ||
-           step2_cpu[i].v1_x != step2_data[i].v1_x ||
-           step2_cpu[i].v1_y != step2_data[i].v1_y ||
-           step2_cpu[i].v1_z != step2_data[i].v1_z ||
-           step2_cpu[i].v2_x != step2_data[i].v2_x ||
-           step2_cpu[i].v2_y != step2_data[i].v2_y ||
-           step2_cpu[i].v2_z != step2_data[i].v2_z)
+        r32 epsilon = 0.000001;
+        r32 epsilon_x = abs(step2_cpu[i].cen_x - step2_data[i].cen_x);
+        r32 epsilon_y = abs(step2_cpu[i].cen_y - step2_data[i].cen_y);
+        r32 epsilon_z = abs(step2_cpu[i].cen_z - step2_data[i].cen_z);
+        
+        if ((epsilon_x > epsilon) ||
+            (epsilon_y > epsilon) ||
+            (epsilon_z > epsilon))
+        {
+            ODS("> set %5d \n", i);
+        }
+    }
+#endif
+#if 0
+    for(u32 i = 0; i < model_tricount; i++)
+    {
+        r32 epsilon = 0.000001;
+        r32 epsilon_x = abs(step2_cpu[i].cen.x - step2_data[i].cen.x);
+        r32 epsilon_y = abs(step2_cpu[i].cen.y - step2_data[i].cen.y);
+        r32 epsilon_z = abs(step2_cpu[i].cen.z - step2_data[i].cen.z);
+        
+        if ((epsilon_x > epsilon) ||
+            (epsilon_y > epsilon) ||
+            (epsilon_z > epsilon))
         {
             ODS("> set %5d \n", i);
         }
