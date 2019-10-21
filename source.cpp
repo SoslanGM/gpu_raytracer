@@ -297,10 +297,8 @@ void GetComputePipeline(char *shader)
 }
 
 
-char *DecToBin(u64 n)
+char *DecToBin(u64 n, u32 width)
 {
-    u32 width = 64;
-    
     char *binnum = (char *)malloc(width+1);
     binnum[width] = '\0';
     
@@ -313,6 +311,10 @@ char *DecToBin(u64 n)
     }
     
     return binnum;
+}
+char *DecToBin(u64 n)
+{
+    return DecToBin(n, 64);
 }
 
 
@@ -916,6 +918,19 @@ u32 EncodeMorton3(u32 x, u32 y, u32 z)
 
 
 
+void CheckMortonSorting(u32 *data, u32 count)
+{
+    for(u32 i = 0; i < count-1; i++)
+    {
+        if(data[i] > data[i+1])
+        {
+            ODS("Debug! \n");
+            exit(0);
+        }
+    }
+    ODS("All good. \n");
+}
+
 
 #define RD 0
 
@@ -1136,8 +1151,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     ODS("Triangle count:    %d\n", model.index_count/3);
     ODS("\n");
     
-    u32 vertex_datasize = (model.vertex_count * model.floats_per_vertex) / (1024);
-    ODS("Full memory size of vertex data: %d KB\n", vertex_datasize);
+    u32 vertex_datasize = (model.vertex_count * model.floats_per_vertex);
     
     
     // - making room for each of coord components
@@ -1458,14 +1472,16 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
+    VkPipelineBindPoint bindpoint_graphics = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    VkPipelineBindPoint bindpoint_compute  = VK_PIPELINE_BIND_POINT_COMPUTE;
     
     
     // Compute stuff
     
     // === Step 1: Take a look at the model vertexes, find min/max of xyz, get the AABB of the model.
     vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-    vkCmdBindDescriptorSets(commandbuffer, VK_PIPELINE_BIND_POINT_COMPUTE, vk.pipelayout, 0, 1, &vk.dsl, 0, NULL);
-    vkCmdBindPipeline(commandbuffer, VK_PIPELINE_BIND_POINT_COMPUTE, vk.compipe);
+    vkCmdBindDescriptorSets(commandbuffer, bindpoint_compute, vk.pipelayout, 0, 1, &vk.dsl, 0, NULL);
+    vkCmdBindPipeline(commandbuffer, bindpoint_compute, vk.compipe);
     
     // --- This entire block is riddled with dangerous floaty maths.
     u32 thread_count = model_tricount;
@@ -1485,6 +1501,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     u64 GPU_calc_start = TimerRead();
     
+    // - min/max
     ODS("Dispatch: %5d threads, %4d blocks; [offsets r:%4d | w:%4d]\n", thread_count, block_count, controls.read_offset, controls.write_offset);
     vkCmdPushConstants(commandbuffer, vk.pipelayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(controls), &controls);  // is sizeof(controls) 12?
     vkCmdDispatch(commandbuffer, block_count, 1, 1);
@@ -1877,10 +1894,11 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     block_count = (u32)ceil((r32)model_tricount / (r32)block_size);
     
+    // --- generate mortons
     // command buffer
     vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-    vkCmdBindDescriptorSets(commandbuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compipe2_layout, 0, 1, &compipe2_ds, 0, NULL);
-    vkCmdBindPipeline(commandbuffer, VK_PIPELINE_BIND_POINT_COMPUTE, compipe2);
+    vkCmdBindDescriptorSets(commandbuffer, bindpoint_compute, compipe2_layout, 0, 1, &compipe2_ds, 0, NULL);
+    vkCmdBindPipeline(commandbuffer, bindpoint_compute, compipe2);
     vkCmdPushConstants(commandbuffer, compipe2_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(r32) * 6 + sizeof(u32), &step2_controls);
     vkCmdDispatch(commandbuffer, block_count, 1, 1);
     vkEndCommandBuffer(commandbuffer);
@@ -1936,6 +1954,279 @@ int CALLBACK WinMain(HINSTANCE instance,
     }
 #endif
     
+    
+    
+    // Morton sort
+#if 1
+    u32 worksize = 32;//model_tricount;
+    u32 groupcount = worksize / block_size;
+    
+    
+    u32 morton_datasize = worksize * sizeof(u32);
+    u32 *morton_data = (u32 *)calloc(worksize, sizeof(u32));
+    for(u32 i = 0; i < worksize; i++)
+        morton_data[i] = step2_data[i].morton_code;
+    
+    for(u32 i = 0; i < worksize; i++)
+    {
+        ODS("%3d : %s\n", i, DecToBin(morton_data[i], 32));
+    }
+    ODS("\n");
+    
+    
+    u32 *opspace = (u32 *)calloc(worksize, sizeof(u32));
+    u32 bitsumcount = groupcount * 2;
+    //u32 *bitsums = (u32 *)malloc(bitsumcount * sizeof(u32));
+    
+    u32 number_width = 32;
+    u32 radix = 2;
+    u32 counters[2] = {};
+    
+    // we go through every number, THEN go to the next bit.
+    // Just a single group first.
+    for(u32 bit_index = 0; bit_index < number_width; bit_index++)
+    {
+        u32 *digits  = (u32 *)calloc(2 * worksize, sizeof(u32));
+        u32 *scan    = (u32 *)calloc(2 * worksize, sizeof(u32));
+        u32 *shuffle = (u32 *)calloc(2 * worksize, sizeof(u32));
+        
+        ODS("start \n");
+        for(u32 i = 0; i < worksize; i++)
+        {
+            u32 bit_value = (morton_data[i] & (1 << bit_index)) >> bit_index;
+            counters[bit_value]++;
+            if(bit_value == 0)
+                digits[i] = 1;
+            else
+                digits[number_width+i] = 1;
+        }
+        
+        // scan the digits
+        u32 scanner = 0;
+        for(u32 j = 0; j < 63; j++)
+        {
+            scanner += digits[j];
+            scan[j+1] = scanner;
+        }
+        
+        u32 counter = 0;
+        for(u32 j = 0; j < 64; j++)
+        {
+            if(digits[j] == 1)
+            {
+                u32 index = j % 32;
+                shuffle[counter] = index;
+                counter++;
+            }
+        }
+        
+        for(u32 j = 0; j < worksize; j++)
+        {
+            u32 index = shuffle[j];
+            u32 value = morton_data[index];
+            opspace[j] = value;
+        }
+        
+        for(u32 j = 0; j < worksize; j++)
+        {
+            morton_data[j] = opspace[j];
+        }
+        ODS("end \n");
+    }
+    
+    
+#endif
+    
+    ODS("Sorted: \n");
+    for(u32 i = 0; i < worksize; i++)
+    {
+        ODS("%s \n", DecToBin(morton_data[i], number_width));
+    }
+    
+    CheckMortonSorting(morton_data, worksize);
+    
+    
+    exit(0);
+    
+    
+    
+    // --- sort mortons
+    //u32 worksize = 64;
+    //blocksize = 32
+    u32 step3_groupcount = (u32)ceil(worksize/block_size);
+    
+    // pipeline resources
+    VkShaderModule radix_module = GetShaderModule("../code/shader_radix.spv");
+    
+    VkPipelineShaderStageCreateInfo compipe3_stage = {};
+    compipe3_stage.sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    compipe3_stage.pNext               = NULL;
+    compipe3_stage.flags               = 0;
+    compipe3_stage.stage               = VK_SHADER_STAGE_COMPUTE_BIT;
+    compipe3_stage.module              = radix_module;
+    compipe3_stage.pName               = "main";
+    compipe3_stage.pSpecializationInfo = NULL;
+    
+    
+    VkDescriptorSetLayoutBinding compipe3_dslbinding0 = {};
+    compipe3_dslbinding0.binding            = 0;
+    compipe3_dslbinding0.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_dslbinding0.descriptorCount    = 1;
+    compipe3_dslbinding0.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+    compipe3_dslbinding0.pImmutableSamplers = NULL;
+    
+    VkDescriptorSetLayoutBinding compipe3_dslbinding1 = {};
+    compipe3_dslbinding1.binding            = 1;
+    compipe3_dslbinding1.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_dslbinding1.descriptorCount    = 1;
+    compipe3_dslbinding1.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+    compipe3_dslbinding1.pImmutableSamplers = NULL;
+    
+    VkDescriptorSetLayoutBinding compipe3_dslbinding2 = {};
+    compipe3_dslbinding2.binding            = 2;
+    compipe3_dslbinding2.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_dslbinding2.descriptorCount    = 1;
+    compipe3_dslbinding2.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+    compipe3_dslbinding2.pImmutableSamplers = NULL;
+    
+    VkDescriptorSetLayoutBinding compipe3_dslbindings[] = {
+        compipe3_dslbinding0, compipe3_dslbinding1, compipe3_dslbinding2
+    };
+    
+    VkDescriptorSetLayoutCreateInfo compipe3_dslci = {};
+    compipe3_dslci.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    compipe3_dslci.pNext        = NULL;
+    compipe3_dslci.flags        = 0;
+    compipe3_dslci.bindingCount = 3;
+    compipe3_dslci.pBindings    = compipe3_dslbindings;
+    
+    VkDescriptorSetLayout compipe3_dsl;
+    vkCreateDescriptorSetLayout(vk.device, &compipe3_dslci, NULL, &compipe3_dsl);
+    
+    
+    VkPushConstantRange compipe3_pcr = {};
+    compipe3_pcr.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    compipe3_pcr.offset     = 0;
+    compipe3_pcr.size       = sizeof(u32);
+    
+    VkPipelineLayoutCreateInfo compipe3_layoutci = {};
+    compipe3_layoutci.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    compipe3_layoutci.pNext                  = NULL;
+    compipe3_layoutci.flags                  = 0;
+    compipe3_layoutci.setLayoutCount         = 1;
+    compipe3_layoutci.pSetLayouts            = &compipe3_dsl;
+    compipe3_layoutci.pushConstantRangeCount = 1;
+    compipe3_layoutci.pPushConstantRanges    = &compipe3_pcr;
+    
+    VkPipelineLayout compipe3_layout;
+    vkCreatePipelineLayout(vk.device, &compipe3_layoutci, NULL, &compipe3_layout);
+    
+    
+    VkComputePipelineCreateInfo compipe3_ci = {};
+    compipe3_ci.sType              = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    compipe3_ci.pNext              = NULL;
+    compipe3_ci.flags              = 0;
+    compipe3_ci.stage              = compipe3_stage;
+    compipe3_ci.layout             = compipe3_layout;
+    
+    VkPipeline compipe3;
+    vkCreateComputePipelines(vk.device, NULL, 1, &compipe3_ci, NULL, &compipe3);
+    
+    
+    // write resources
+    VkDescriptorPoolSize compipe3_poolsize = {};
+    compipe3_poolsize.type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_poolsize.descriptorCount = 3;
+    
+    VkDescriptorPoolCreateInfo compipe3_poolci = {};
+    compipe3_poolci.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    compipe3_poolci.pNext         = NULL;
+    compipe3_poolci.flags         = 0;
+    compipe3_poolci.maxSets       = 3;
+    compipe3_poolci.poolSizeCount = 1;
+    compipe3_poolci.pPoolSizes    = &compipe3_poolsize;
+    
+    VkDescriptorPool compipe3_dspool;
+    vkCreateDescriptorPool(vk.device, &compipe3_poolci, NULL, &compipe3_dspool);
+    
+    
+    
+    VkDescriptorSetAllocateInfo compipe3_dsai = {};
+    compipe3_dsai.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    compipe3_dsai.pNext              = NULL;
+    compipe3_dsai.descriptorPool     = compipe3_dspool;
+    compipe3_dsai.descriptorSetCount = 1;
+    compipe3_dsai.pSetLayouts        = &compipe3_dsl;
+    
+    VkDescriptorSet compipe3_ds;
+    vkAllocateDescriptorSets(vk.device, &compipe3_dsai, &compipe3_ds);
+    
+    
+    VkDeviceMemory morton_memory;
+    VkBuffer morton_buffer = CreateBuffer(worksize,
+                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                                          vk.device, gpu_memprops,
+                                          &morton_memory);
+    void *morton_mapptr;
+    vkMapMemory(vk.device, morton_memory, 0, VK_WHOLE_SIZE, 0, &morton_mapptr);
+    memcpy(morton_mapptr, morton_data, worksize);
+    
+    VkDeviceMemory sortedmorton_memory;
+    VkBuffer sortedmorton_buffer = CreateBuffer(worksize,
+                                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                                vk.device, gpu_memprops,
+                                                &sortedmorton_memory);
+    
+    VkDeviceMemory operationspace_memory;
+    VkBuffer operationspace_buffer = CreateBuffer(2 * worksize,
+                                                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                                  vk.device, gpu_memprops,
+                                                  &operationspace_memory);
+    
+    
+    
+    VkDescriptorBufferInfo compipe3_descwritebi = {};
+    compipe3_descwritebi.buffer = morton_buffer;
+    compipe3_descwritebi.offset = 0;
+    compipe3_descwritebi.range  = VK_WHOLE_SIZE;
+    
+    VkWriteDescriptorSet compipe3_descwrite = {};
+    compipe3_descwrite.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    compipe3_descwrite.pNext            = NULL;
+    compipe3_descwrite.dstSet           = compipe3_ds;
+    compipe3_descwrite.dstBinding       = 0;
+    compipe3_descwrite.dstArrayElement  = 0;
+    compipe3_descwrite.descriptorCount  = 1;
+    compipe3_descwrite.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_descwrite.pImageInfo       = NULL;
+    compipe3_descwrite.pBufferInfo      = &compipe3_descwritebi;
+    compipe3_descwrite.pTexelBufferView = NULL;
+    
+    vkUpdateDescriptorSets(vk.device, 1, &compipe3_descwrite, 0, NULL);
+    
+    
+    // record cmdbuffer
+    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
+    vkCmdBindDescriptorSets(commandbuffer, bindpoint_compute, compipe3_layout, 0, 1, &compipe3_ds, 0, NULL);
+    vkCmdBindPipeline(commandbuffer, bindpoint_compute, compipe3);
+    vkCmdPushConstants(commandbuffer, compipe3_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(u32), &worksize);
+    vkCmdDispatch(commandbuffer, step3_groupcount, 1, 1);
+    vkEndCommandBuffer(commandbuffer);
+    
+    // execute cmdbuffer
+    vkQueueSubmit(vk.queue, 1, &compute_si, fence);
+    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &fence);
+    
+    // read sorted data
+    u32 *morton_result = (u32 *)malloc(worksize);
+    memcpy(morton_result, sortedmorton_memory, worksize);
+    
+    // check if it's sorted properly
+    CheckMortonSorting(morton_result, worksize);
     
     exit(0);
     
@@ -2106,7 +2397,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     VkSubpassDescription subpass = {};
     subpass.flags                   = 0;
-    subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.pipelineBindPoint       = bindpoint_graphics;
     subpass.colorAttachmentCount    = 1;
     subpass.pColorAttachments       = &subpass_attachmentreference;
     
@@ -2322,8 +2613,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
     vkCmdBindVertexBuffers(commandbuffer, 0, 1, &vertex_buffer, &offset);
     vkCmdBindIndexBuffer(commandbuffer, index_buffer, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdBindPipeline(commandbuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
-    vkCmdBindDescriptorSets(commandbuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelinelayout, 0, 1, &descriptorset, 0, NULL);
+    vkCmdBindPipeline(commandbuffer, bindpoint_graphics, graphics_pipeline);
+    vkCmdBindDescriptorSets(commandbuffer, bindpoint_graphics, pipelinelayout, 0, 1, &descriptorset, 0, NULL);
     vkCmdBeginRenderPass(commandbuffer, &renderpass_bi, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdDrawIndexed(commandbuffer, 6, 1, 0, 0, 0);
     vkCmdEndRenderPass(commandbuffer);

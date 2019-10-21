@@ -1,0 +1,32 @@
+// - Sort the morton codes, at last!
+
+#version 450 core
+
+layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+layout (push_constant) uniform range
+{
+	uint thread_count;
+};
+
+layout (std430, set = 0, binding = 0) buffer input0  { uint mortons[]; };
+layout (std430, set = 0, binding = 1) buffer output0 { uint sorted_mortons[]; };
+layout (std430, set = 0, binding = 2) buffer output1 { uint operation_space[]; };
+
+shared uint data[gl_WorkGroupSize.x];
+shared uint counter[gl_WorkGroupSize.x];
+shared uint opspace[2*gl_WorkGroupSize.x];
+
+void main()
+{
+    uint global_index = gl_GlobalInvocationID.x;
+    if(global_index > thread_count)
+        return;
+    uint local_index = gl_LocalInvocationID.x;
+    
+    
+    data[local_index] = mortons[global_index];
+    memoryBarrierShared();
+    
+    
+    
+}
