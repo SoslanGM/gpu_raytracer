@@ -43,30 +43,30 @@ void main()
     uint local_index = gl_LocalInvocationID.x;
     
     // loop over each of the bits. No need to iterate over data elements, thread spread's on it.
-    for(uint i = 0; i < 1; i++)
+    for(uint i = 0; i < 32; i++)
     {
-        // step 0 - read the bits
+        // step 0 - read the bits, write 0s and 1s
         uint bit = (mortons[global_index] & (1<<i))>>i;
-        zeroes[global_index] = ~bit & 1;  // write 1 if bit's 0, and 0 if bit's 1 - inversion(and & of 1)
-        ones[global_index]   = bit;       // write 1 if bit's 1, and 0 if bit's 0 - raw
+        zeroes[global_index] = ~bit & 1;
+        ones[global_index]   = bit;
         
-        // step 1 - scan 0s and 1s(single threads)(future version - reductions)
+        // step 1 - scan 0s and 1s
         if(local_index == 0)
         {
             uint scanner0 = 0;
             uint scanner1 = 0;
-            for(uint j = 0; j < (thread_count-1); j++)
+            for(uint j = 0; j < thread_count; j++)
             {
+                scan0[j] = scanner0;
+                scan1[j] = scanner1;
                 scanner0 += zeroes[j];
                 scanner1 += ones[j];
-                scan0[j+1] = scanner0;
-                scan1[j+1] = scanner1;
             }
         }
         barrier();
         memoryBarrierBuffer();
         
-        // step 2 - calculate sums(single thread)(future version - reduction)
+        // step 2 - calculate sums of 0s and 1s
         if(local_index == 0)
         {
             uint counter0 = 0;
@@ -84,16 +84,16 @@ void main()
         barrier();
         memoryBarrierBuffer();
         
-        // step 3 - scan sums(single thread)(future version - reduction)
+        // step 3 - scan sums of 0s and 1s
         if(local_index == 0)
         {
             uint sumscanner = 0;
-            for(uint j = 0; j < (gl_NumWorkGroups.x); j++)
+            for(uint j = 0; j < gl_NumWorkGroups.x; j++)
             {
                 sumscan0[gl_WorkGroupID.x] = sumscanner;
                 sumscanner += sums0[j];
             }
-            for(uint j = 0; j < (gl_NumWorkGroups.x); j++)
+            for(uint j = 0; j < gl_NumWorkGroups.x; j++)
             {
                 sumscan1[gl_WorkGroupID.x] = sumscanner;
                 sumscanner += sums1[j];
