@@ -1957,15 +1957,13 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // Morton sort
-#if 1
+    
+#if 0
     u32 worksize = 32;//model_tricount;
     u32 groupcount = worksize / block_size;
     
     
     u32 morton_datasize = worksize * sizeof(u32);
-    u32 *morton_data = (u32 *)calloc(worksize, sizeof(u32));
-    for(u32 i = 0; i < worksize; i++)
-        morton_data[i] = step2_data[i].morton_code;
     
     for(u32 i = 0; i < worksize; i++)
     {
@@ -1975,8 +1973,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     u32 *opspace = (u32 *)calloc(worksize, sizeof(u32));
-    u32 bitsumcount = groupcount * 2;
-    //u32 *bitsums = (u32 *)malloc(bitsumcount * sizeof(u32));
+    u32 *bitsums = (u32 *)calloc(worksize, sizeof(u32));
     
     u32 number_width = 32;
     u32 radix = 2;
@@ -1995,10 +1992,9 @@ int CALLBACK WinMain(HINSTANCE instance,
         {
             u32 bit_value = (morton_data[i] & (1 << bit_index)) >> bit_index;
             counters[bit_value]++;
-            if(bit_value == 0)
-                digits[i] = 1;
-            else
-                digits[number_width+i] = 1;
+            // this is only working because I had a single group;
+            //  but the pattern remains: write all 0s, then all 1s.
+            digits[bit_value*number_width+i] = 1;
         }
         
         // scan the digits
@@ -2025,6 +2021,7 @@ int CALLBACK WinMain(HINSTANCE instance,
             u32 index = shuffle[j];
             u32 value = morton_data[index];
             opspace[j] = value;
+            // opspace[j] = morton_data[shuffle[j]];
         }
         
         for(u32 j = 0; j < worksize; j++)
@@ -2035,7 +2032,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     }
     
     
-#endif
     
     ODS("Sorted: \n");
     for(u32 i = 0; i < worksize; i++)
@@ -2045,18 +2041,29 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     CheckMortonSorting(morton_data, worksize);
     
-    
     exit(0);
     
+#endif
     
     
     // --- sort mortons
-    //u32 worksize = 64;
-    //blocksize = 32
+    //u32 worksize = model_tricount;  // 8 groups
+    u32 worksize = 32;  // 8 groups
+    
+    u32 worksizedata = worksize * sizeof(u32);
     u32 step3_groupcount = (u32)ceil(worksize/block_size);
     
+    u32 *morton_data = (u32 *)calloc(worksize, sizeof(u32));
+    for(u32 i = 0; i < worksize; i++)
+        morton_data[i] = step2_data[i].morton_code;
+    
+    for(u32 i = 0; i < worksize; i++)
+    {
+        ODS("%3d : %s \n", i, DecToBin(morton_data[i], 32));
+    }
+    
     // pipeline resources
-    VkShaderModule radix_module = GetShaderModule("../code/shader_radix.spv");
+    VkShaderModule radix_module = GetShaderModule("../code/radix_comp.spv");
     
     VkPipelineShaderStageCreateInfo compipe3_stage = {};
     compipe3_stage.sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -2089,15 +2096,75 @@ int CALLBACK WinMain(HINSTANCE instance,
     compipe3_dslbinding2.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
     compipe3_dslbinding2.pImmutableSamplers = NULL;
     
+    VkDescriptorSetLayoutBinding compipe3_dslbinding3 = {};
+    compipe3_dslbinding3.binding            = 3;
+    compipe3_dslbinding3.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_dslbinding3.descriptorCount    = 1;
+    compipe3_dslbinding3.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+    compipe3_dslbinding3.pImmutableSamplers = NULL;
+    
+    VkDescriptorSetLayoutBinding compipe3_dslbinding4 = {};
+    compipe3_dslbinding4.binding            = 4;
+    compipe3_dslbinding4.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_dslbinding4.descriptorCount    = 1;
+    compipe3_dslbinding4.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+    compipe3_dslbinding4.pImmutableSamplers = NULL;
+    
+    VkDescriptorSetLayoutBinding compipe3_dslbinding5 = {};
+    compipe3_dslbinding5.binding            = 5;
+    compipe3_dslbinding5.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_dslbinding5.descriptorCount    = 1;
+    compipe3_dslbinding5.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+    compipe3_dslbinding5.pImmutableSamplers = NULL;
+    
+    VkDescriptorSetLayoutBinding compipe3_dslbinding6 = {};
+    compipe3_dslbinding6.binding            = 6;
+    compipe3_dslbinding6.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_dslbinding6.descriptorCount    = 1;
+    compipe3_dslbinding6.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+    compipe3_dslbinding6.pImmutableSamplers = NULL;
+    
+    VkDescriptorSetLayoutBinding compipe3_dslbinding7 = {};
+    compipe3_dslbinding7.binding            = 7;
+    compipe3_dslbinding7.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_dslbinding7.descriptorCount    = 1;
+    compipe3_dslbinding7.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+    compipe3_dslbinding7.pImmutableSamplers = NULL;
+    
+    VkDescriptorSetLayoutBinding compipe3_dslbinding8 = {};
+    compipe3_dslbinding8.binding            = 8;
+    compipe3_dslbinding8.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_dslbinding8.descriptorCount    = 1;
+    compipe3_dslbinding8.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+    compipe3_dslbinding8.pImmutableSamplers = NULL;
+    
+    VkDescriptorSetLayoutBinding compipe3_dslbinding9 = {};
+    compipe3_dslbinding9.binding            = 9;
+    compipe3_dslbinding9.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_dslbinding9.descriptorCount    = 1;
+    compipe3_dslbinding9.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+    compipe3_dslbinding9.pImmutableSamplers = NULL;
+    
+    
+    
     VkDescriptorSetLayoutBinding compipe3_dslbindings[] = {
-        compipe3_dslbinding0, compipe3_dslbinding1, compipe3_dslbinding2
+        compipe3_dslbinding0,
+        compipe3_dslbinding1,
+        compipe3_dslbinding2,
+        compipe3_dslbinding3,
+        compipe3_dslbinding4,
+        compipe3_dslbinding5,
+        compipe3_dslbinding6,
+        compipe3_dslbinding7,
+        compipe3_dslbinding8,
+        compipe3_dslbinding9
     };
     
     VkDescriptorSetLayoutCreateInfo compipe3_dslci = {};
     compipe3_dslci.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     compipe3_dslci.pNext        = NULL;
     compipe3_dslci.flags        = 0;
-    compipe3_dslci.bindingCount = 3;
+    compipe3_dslci.bindingCount = 10;
     compipe3_dslci.pBindings    = compipe3_dslbindings;
     
     VkDescriptorSetLayout compipe3_dsl;
@@ -2136,13 +2203,13 @@ int CALLBACK WinMain(HINSTANCE instance,
     // write resources
     VkDescriptorPoolSize compipe3_poolsize = {};
     compipe3_poolsize.type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_poolsize.descriptorCount = 3;
+    compipe3_poolsize.descriptorCount = 10;
     
     VkDescriptorPoolCreateInfo compipe3_poolci = {};
     compipe3_poolci.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     compipe3_poolci.pNext         = NULL;
     compipe3_poolci.flags         = 0;
-    compipe3_poolci.maxSets       = 3;
+    compipe3_poolci.maxSets       = 1;
     compipe3_poolci.poolSizeCount = 1;
     compipe3_poolci.pPoolSizes    = &compipe3_poolsize;
     
@@ -2161,51 +2228,246 @@ int CALLBACK WinMain(HINSTANCE instance,
     VkDescriptorSet compipe3_ds;
     vkAllocateDescriptorSets(vk.device, &compipe3_dsai, &compipe3_ds);
     
-    
     VkDeviceMemory morton_memory;
-    VkBuffer morton_buffer = CreateBuffer(worksize,
+    VkBuffer morton_buffer = CreateBuffer(worksizedata,
                                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
                                           vk.device, gpu_memprops,
                                           &morton_memory);
     void *morton_mapptr;
     vkMapMemory(vk.device, morton_memory, 0, VK_WHOLE_SIZE, 0, &morton_mapptr);
-    memcpy(morton_mapptr, morton_data, worksize);
+    memcpy(morton_mapptr, morton_data, worksizedata);
+    
+    // Should I prefill all this with 0?
+    VkDeviceMemory zeroes_memory;
+    VkBuffer zeroes_buffer = CreateBuffer(worksizedata,
+                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                          vk.device, gpu_memprops,
+                                          &zeroes_memory);
+    VkDeviceMemory ones_memory;
+    VkBuffer ones_buffer = CreateBuffer(worksizedata,
+                                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                        vk.device, gpu_memprops,
+                                        &ones_memory);
+    
+    VkDeviceMemory scanzeroes_memory;
+    VkBuffer scanzeroes_buffer = CreateBuffer(worksizedata,
+                                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                              vk.device, gpu_memprops,
+                                              &scanzeroes_memory);
+    VkDeviceMemory scanones_memory;
+    VkBuffer scanones_buffer = CreateBuffer(worksizedata,
+                                            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                            vk.device, gpu_memprops,
+                                            &scanones_memory);
+    VkDeviceMemory sumzeroes_memory;
+    VkBuffer sumzeroes_buffer = CreateBuffer(step3_groupcount * sizeof(u32),
+                                             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                             vk.device, gpu_memprops,
+                                             &sumzeroes_memory);
+    
+    VkDeviceMemory sumones_memory;
+    VkBuffer sumones_buffer = CreateBuffer(step3_groupcount * sizeof(u32),
+                                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                           vk.device, gpu_memprops,
+                                           &sumones_memory);
+    VkDeviceMemory sumscanzeroes_memory;
+    VkBuffer sumscanzeroes_buffer = CreateBuffer(step3_groupcount * sizeof(u32),
+                                                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                                 vk.device, gpu_memprops,
+                                                 &sumscanzeroes_memory);
+    
+    VkDeviceMemory sumscanones_memory;
+    VkBuffer sumscanones_buffer = CreateBuffer(step3_groupcount * sizeof(u32),
+                                               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                               vk.device, gpu_memprops,
+                                               &sumscanones_memory);
     
     VkDeviceMemory sortedmorton_memory;
-    VkBuffer sortedmorton_buffer = CreateBuffer(worksize,
+    VkBuffer sortedmorton_buffer = CreateBuffer(worksizedata,
                                                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                                 vk.device, gpu_memprops,
                                                 &sortedmorton_memory);
     
-    VkDeviceMemory operationspace_memory;
-    VkBuffer operationspace_buffer = CreateBuffer(2 * worksize,
-                                                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                                  vk.device, gpu_memprops,
-                                                  &operationspace_memory);
+    
+    VkDescriptorBufferInfo compipe3_descwrite0bi = {};
+    compipe3_descwrite0bi.buffer = morton_buffer;
+    compipe3_descwrite0bi.offset = 0;
+    compipe3_descwrite0bi.range  = VK_WHOLE_SIZE;
+    
+    VkWriteDescriptorSet compipe3_descwrite0 = {};
+    compipe3_descwrite0.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    compipe3_descwrite0.pNext            = NULL;
+    compipe3_descwrite0.dstSet           = compipe3_ds;
+    compipe3_descwrite0.dstBinding       = 0;
+    compipe3_descwrite0.dstArrayElement  = 0;
+    compipe3_descwrite0.descriptorCount  = 1;
+    compipe3_descwrite0.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_descwrite0.pBufferInfo      = &compipe3_descwrite0bi;
     
     
+    VkDescriptorBufferInfo compipe3_descwrite1bi = {};
+    compipe3_descwrite1bi.buffer = zeroes_buffer;
+    compipe3_descwrite1bi.offset = 0;
+    compipe3_descwrite1bi.range  = VK_WHOLE_SIZE;
     
-    VkDescriptorBufferInfo compipe3_descwritebi = {};
-    compipe3_descwritebi.buffer = morton_buffer;
-    compipe3_descwritebi.offset = 0;
-    compipe3_descwritebi.range  = VK_WHOLE_SIZE;
+    VkWriteDescriptorSet compipe3_descwrite1 = {};
+    compipe3_descwrite1.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    compipe3_descwrite1.pNext            = NULL;
+    compipe3_descwrite1.dstSet           = compipe3_ds;
+    compipe3_descwrite1.dstBinding       = 1;
+    compipe3_descwrite1.dstArrayElement  = 0;
+    compipe3_descwrite1.descriptorCount  = 1;
+    compipe3_descwrite1.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_descwrite1.pBufferInfo      = &compipe3_descwrite1bi;
     
-    VkWriteDescriptorSet compipe3_descwrite = {};
-    compipe3_descwrite.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    compipe3_descwrite.pNext            = NULL;
-    compipe3_descwrite.dstSet           = compipe3_ds;
-    compipe3_descwrite.dstBinding       = 0;
-    compipe3_descwrite.dstArrayElement  = 0;
-    compipe3_descwrite.descriptorCount  = 1;
-    compipe3_descwrite.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_descwrite.pImageInfo       = NULL;
-    compipe3_descwrite.pBufferInfo      = &compipe3_descwritebi;
-    compipe3_descwrite.pTexelBufferView = NULL;
     
-    vkUpdateDescriptorSets(vk.device, 1, &compipe3_descwrite, 0, NULL);
+    VkDescriptorBufferInfo compipe3_descwrite2bi = {};
+    compipe3_descwrite2bi.buffer = ones_buffer;
+    compipe3_descwrite2bi.offset = 0;
+    compipe3_descwrite2bi.range  = VK_WHOLE_SIZE;
+    
+    VkWriteDescriptorSet compipe3_descwrite2 = {};
+    compipe3_descwrite2.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    compipe3_descwrite2.pNext            = NULL;
+    compipe3_descwrite2.dstSet           = compipe3_ds;
+    compipe3_descwrite2.dstBinding       = 2;
+    compipe3_descwrite2.dstArrayElement  = 0;
+    compipe3_descwrite2.descriptorCount  = 1;
+    compipe3_descwrite2.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_descwrite2.pBufferInfo      = &compipe3_descwrite2bi;
+    
+    VkDescriptorBufferInfo compipe3_descwrite3bi = {};
+    compipe3_descwrite3bi.buffer = scanzeroes_buffer;
+    compipe3_descwrite3bi.offset = 0;
+    compipe3_descwrite3bi.range  = VK_WHOLE_SIZE;
+    
+    VkWriteDescriptorSet compipe3_descwrite3 = {};
+    compipe3_descwrite3.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    compipe3_descwrite3.pNext            = NULL;
+    compipe3_descwrite3.dstSet           = compipe3_ds;
+    compipe3_descwrite3.dstBinding       = 3;
+    compipe3_descwrite3.dstArrayElement  = 0;
+    compipe3_descwrite3.descriptorCount  = 1;
+    compipe3_descwrite3.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_descwrite3.pBufferInfo      = &compipe3_descwrite3bi;
+    
+    VkDescriptorBufferInfo compipe3_descwrite4bi = {};
+    compipe3_descwrite4bi.buffer = scanones_buffer;
+    compipe3_descwrite4bi.offset = 0;
+    compipe3_descwrite4bi.range  = VK_WHOLE_SIZE;
+    
+    VkWriteDescriptorSet compipe3_descwrite4 = {};
+    compipe3_descwrite4.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    compipe3_descwrite4.pNext            = NULL;
+    compipe3_descwrite4.dstSet           = compipe3_ds;
+    compipe3_descwrite4.dstBinding       = 4;
+    compipe3_descwrite4.dstArrayElement  = 0;
+    compipe3_descwrite4.descriptorCount  = 1;
+    compipe3_descwrite4.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_descwrite4.pBufferInfo      = &compipe3_descwrite4bi;
+    
+    
+    VkDescriptorBufferInfo compipe3_descwrite5bi = {};
+    compipe3_descwrite5bi.buffer = sumzeroes_buffer;
+    compipe3_descwrite5bi.offset = 0;
+    compipe3_descwrite5bi.range  = VK_WHOLE_SIZE;
+    
+    VkWriteDescriptorSet compipe3_descwrite5 = {};
+    compipe3_descwrite5.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    compipe3_descwrite5.pNext            = NULL;
+    compipe3_descwrite5.dstSet           = compipe3_ds;
+    compipe3_descwrite5.dstBinding       = 5;
+    compipe3_descwrite5.dstArrayElement  = 0;
+    compipe3_descwrite5.descriptorCount  = 1;
+    compipe3_descwrite5.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_descwrite5.pBufferInfo      = &compipe3_descwrite5bi;
+    
+    VkDescriptorBufferInfo compipe3_descwrite6bi = {};
+    compipe3_descwrite6bi.buffer = sumones_buffer;
+    compipe3_descwrite6bi.offset = 0;
+    compipe3_descwrite6bi.range  = VK_WHOLE_SIZE;
+    
+    VkWriteDescriptorSet compipe3_descwrite6 = {};
+    compipe3_descwrite6.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    compipe3_descwrite6.pNext            = NULL;
+    compipe3_descwrite6.dstSet           = compipe3_ds;
+    compipe3_descwrite6.dstBinding       = 6;
+    compipe3_descwrite6.dstArrayElement  = 0;
+    compipe3_descwrite6.descriptorCount  = 1;
+    compipe3_descwrite6.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_descwrite6.pBufferInfo      = &compipe3_descwrite6bi;
+    
+    VkDescriptorBufferInfo compipe3_descwrite7bi = {};
+    compipe3_descwrite7bi.buffer = sumscanzeroes_buffer;
+    compipe3_descwrite7bi.offset = 0;
+    compipe3_descwrite7bi.range  = VK_WHOLE_SIZE;
+    
+    VkWriteDescriptorSet compipe3_descwrite7 = {};
+    compipe3_descwrite7.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    compipe3_descwrite7.pNext            = NULL;
+    compipe3_descwrite7.dstSet           = compipe3_ds;
+    compipe3_descwrite7.dstBinding       = 7;
+    compipe3_descwrite7.dstArrayElement  = 0;
+    compipe3_descwrite7.descriptorCount  = 1;
+    compipe3_descwrite7.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_descwrite7.pBufferInfo      = &compipe3_descwrite7bi;
+    
+    VkDescriptorBufferInfo compipe3_descwrite8bi = {};
+    compipe3_descwrite8bi.buffer = sumscanones_buffer;
+    compipe3_descwrite8bi.offset = 0;
+    compipe3_descwrite8bi.range  = VK_WHOLE_SIZE;
+    
+    VkWriteDescriptorSet compipe3_descwrite8 = {};
+    compipe3_descwrite8.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    compipe3_descwrite8.pNext            = NULL;
+    compipe3_descwrite8.dstSet           = compipe3_ds;
+    compipe3_descwrite8.dstBinding       = 8;
+    compipe3_descwrite8.dstArrayElement  = 0;
+    compipe3_descwrite8.descriptorCount  = 1;
+    compipe3_descwrite8.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_descwrite8.pBufferInfo      = &compipe3_descwrite8bi;
+    
+    
+    VkDescriptorBufferInfo compipe3_descwrite9bi = {};
+    compipe3_descwrite9bi.buffer = sortedmorton_buffer;
+    compipe3_descwrite9bi.offset = 0;
+    compipe3_descwrite9bi.range  = VK_WHOLE_SIZE;
+    
+    VkWriteDescriptorSet compipe3_descwrite9 = {};
+    compipe3_descwrite9.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    compipe3_descwrite9.pNext            = NULL;
+    compipe3_descwrite9.dstSet           = compipe3_ds;
+    compipe3_descwrite9.dstBinding       = 9;
+    compipe3_descwrite9.dstArrayElement  = 0;
+    compipe3_descwrite9.descriptorCount  = 1;
+    compipe3_descwrite9.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_descwrite9.pBufferInfo      = &compipe3_descwrite9bi;
+    
+    
+    VkWriteDescriptorSet compipe3_descwrites[] = { 
+        compipe3_descwrite0,
+        compipe3_descwrite1,
+        compipe3_descwrite2,
+        compipe3_descwrite3,
+        compipe3_descwrite4,
+        compipe3_descwrite5,
+        compipe3_descwrite6,
+        compipe3_descwrite7,
+        compipe3_descwrite8,
+        compipe3_descwrite9,
+    };
+    
+    vkUpdateDescriptorSets(vk.device, 10, compipe3_descwrites, 0, NULL);
     
     
     // record cmdbuffer
@@ -2221,9 +2483,55 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
     vkResetFences(vk.device, 1, &fence);
     
+    // - check stuff along the way
+    u32 *zeroes_data = (u32 *)malloc(worksizedata);
+    void *zeroesdata_mapptr;
+    vkMapMemory(vk.device, zeroes_memory, 0, VK_WHOLE_SIZE, 0, &zeroesdata_mapptr);
+    memcpy(zeroes_data, zeroesdata_mapptr, worksizedata);
+    
+    u32 *ones_data = (u32 *)malloc(worksizedata);
+    void *onesdata_mapptr;
+    vkMapMemory(vk.device, ones_memory, 0, VK_WHOLE_SIZE, 0, &onesdata_mapptr);
+    memcpy(ones_data, onesdata_mapptr, worksizedata);
+    
+    u32 *zeroscan_data = (u32 *)malloc(worksizedata);
+    void *zeroscandata_mapptr;
+    vkMapMemory(vk.device, scanzeroes_memory, 0, VK_WHOLE_SIZE, 0, &zeroscandata_mapptr);
+    memcpy(zeroscan_data, zeroscandata_mapptr, worksizedata);
+    
+    u32 *onescan_data = (u32 *)malloc(worksizedata);
+    void *onescandata_mapptr;
+    vkMapMemory(vk.device, scanones_memory, 0, VK_WHOLE_SIZE, 0, &onescandata_mapptr);
+    memcpy(onescan_data, onescandata_mapptr, worksizedata);
+    
+    
+    u32 *sumzeroes_data = (u32 *)malloc(step3_groupcount * sizeof(u32));
+    void *sumzeroesdata_mapptr;
+    vkMapMemory(vk.device, sumzeroes_memory, 0, VK_WHOLE_SIZE, 0, &sumzeroesdata_mapptr);
+    memcpy(sumzeroes_data, sumzeroesdata_mapptr, step3_groupcount * sizeof(u32));
+    
+    u32 *sumones_data = (u32 *)malloc(step3_groupcount * sizeof(u32));
+    void *sumonesdata_mapptr;
+    vkMapMemory(vk.device, sumones_memory, 0, VK_WHOLE_SIZE, 0, &sumonesdata_mapptr);
+    memcpy(sumones_data, sumonesdata_mapptr, step3_groupcount * sizeof(u32));
+    
+    u32 *sumzeroscan_data = (u32 *)malloc(step3_groupcount * sizeof(u32));
+    void *sumzeroscandata_mapptr;
+    vkMapMemory(vk.device, sumscanzeroes_memory, 0, VK_WHOLE_SIZE, 0, &sumzeroscandata_mapptr);
+    memcpy(sumzeroscan_data, sumzeroscandata_mapptr, step3_groupcount * sizeof(u32));
+    
+    u32 *sumonescan_data = (u32 *)malloc(step3_groupcount * sizeof(u32));
+    void *sumonescandata_mapptr;
+    vkMapMemory(vk.device, sumscanones_memory, 0, VK_WHOLE_SIZE, 0, &sumonescandata_mapptr);
+    memcpy(sumonescan_data, sumonescandata_mapptr, step3_groupcount * sizeof(u32));
+    
+    
+    
     // read sorted data
-    u32 *morton_result = (u32 *)malloc(worksize);
-    memcpy(morton_result, sortedmorton_memory, worksize);
+    u32 *morton_result = (u32 *)malloc(worksizedata);
+    //void *sortedmorton_mapptr;
+    //vkMapMemory(vk.device, sortedmorton_memory, 0, VK_WHOLE_SIZE, 0, &sortedmorton_mapptr);
+    memcpy(morton_result, morton_mapptr, worksizedata);
     
     // check if it's sorted properly
     CheckMortonSorting(morton_result, worksize);

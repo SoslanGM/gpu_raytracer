@@ -8,25 +8,119 @@ layout (push_constant) uniform range
 	uint thread_count;
 };
 
-layout (std430, set = 0, binding = 0) buffer input0  { uint mortons[]; };
-layout (std430, set = 0, binding = 1) buffer output0 { uint sorted_mortons[]; };
-layout (std430, set = 0, binding = 2) buffer output1 { uint operation_space[]; };
 
-shared uint data[gl_WorkGroupSize.x];
-shared uint counter[gl_WorkGroupSize.x];
-shared uint opspace[2*gl_WorkGroupSize.x];
+layout (std430, set = 0, binding = 0) buffer input0    { uint mortons[]; };   // mortons are here - data size
+
+layout (std430, set = 0, binding = 1) buffer zeroes_   { uint zeroes[]; };    // keep 0s here - data size
+layout (std430, set = 0, binding = 2) buffer ones_     { uint ones[]; };      // keep 1s here - data size
+
+layout (std430, set = 0, binding = 3) buffer scan_0    { uint scan0[]; };     // scan of 0s here - data size
+layout (std430, set = 0, binding = 4) buffer scan_1    { uint scan1[]; };     // scan of 1s here - data size
+
+layout (std430, set = 0, binding = 5) buffer sums_0    { uint sums0[]; };     // sums of 0s - groupcount size
+layout (std430, set = 0, binding = 6) buffer sums_1    { uint sums1[]; };     // sums of 1s - groupcount size
+
+layout (std430, set = 0, binding = 7) buffer sumscan_0 { uint sumscan0[]; };  // scans over sums of 0s - groupcount size
+layout (std430, set = 0, binding = 8) buffer sumscan_1 { uint sumscan1[]; };  // scans over sums of 1s - groupcount size
+
+layout (std430, set = 0, binding = 9) buffer result    { uint sorted_mortons[]; };  // data size
+
+
+// Plan:
+// - read bits, write 0s and 1s
+// - calculate sums for 0s and 1s
+// - scan sums
+// - scan groups
+// - modify groups with sum scan
+// - read 0s, write first part of sorted numbers; then 1s.
 
 void main()
 {
+    // indexes and excess clear
     uint global_index = gl_GlobalInvocationID.x;
     if(global_index > thread_count)
         return;
     uint local_index = gl_LocalInvocationID.x;
     
-    
-    data[local_index] = mortons[global_index];
-    memoryBarrierShared();
-    
-    
-    
+    // loop over each of the bits. No need to iterate over data elements, thread spread's on it.
+    for(uint i = 0; i < 1; i++)
+    {
+        // step 0 - read the bits
+        uint bit = (mortons[global_index] & (1<<i))>>i;
+        zeroes[global_index] = ~bit & 1;  // write 1 if bit's 0, and 0 if bit's 1 - inversion(and & of 1)
+        ones[global_index]   = bit;       // write 1 if bit's 1, and 0 if bit's 0 - raw
+        
+        // step 1 - scan 0s and 1s(single threads)(future version - reductions)
+        if(local_index == 0)
+        {
+            uint scanner0 = 0;
+            uint scanner1 = 0;
+            for(uint j = 0; j < (thread_count-1); j++)
+            {
+                scanner0 += zeroes[j];
+                scanner1 += ones[j];
+                scan0[j+1] = scanner0;
+                scan1[j+1] = scanner1;
+            }
+        }
+        barrier();
+        memoryBarrierBuffer();
+        
+        // step 2 - calculate sums(single thread)(future version - reduction)
+        if(local_index == 0)
+        {
+            uint counter0 = 0;
+            uint counter1 = 0;
+            for(uint j = 0; j < gl_WorkGroupSize.x; j++)
+            {
+                if(zeroes[j] == 1)
+                    counter0++;
+                if(ones[j] == 1)
+                    counter1++;
+            }
+            sums0[gl_WorkGroupID.x] = counter0;
+            sums1[gl_WorkGroupID.y] = counter1;
+        }
+        barrier();
+        memoryBarrierBuffer();
+        
+        // step 3 - scan sums(single thread)(future version - reduction)
+        if(local_index == 0)
+        {
+            uint sumscanner = 0;
+            for(uint j = 0; j < (gl_NumWorkGroups.x); j++)
+            {
+                sumscan0[gl_WorkGroupID.x] = sumscanner;
+                sumscanner += sums0[j];
+            }
+            for(uint j = 0; j < (gl_NumWorkGroups.x); j++)
+            {
+                sumscan1[gl_WorkGroupID.x] = sumscanner;
+                sumscanner += sums1[j];
+            }
+        }
+        barrier();
+        memoryBarrierBuffer();
+        
+        // step 4 - add sums from the sum scan to read element of 0s/1s scans
+        scan0[global_index] += sumscan0[gl_WorkGroupID.x];
+        scan1[global_index] += sumscan1[gl_WorkGroupID.x];
+        barrier();
+        memoryBarrierBuffer();
+        
+        // step 5 - read indexes from modified 0s and 1s and write corresponding elements of data to opspace
+        if(zeroes[global_index] == 1)
+            sorted_mortons[scan0[global_index]] = mortons[global_index];
+        barrier();
+        memoryBarrierBuffer();
+        if(ones[global_index] == 1)
+            sorted_mortons[scan1[global_index]] = mortons[global_index];
+        barrier();
+        memoryBarrierBuffer();
+        
+        // step 6 - write back from opspace to morton data
+        mortons[global_index] = sorted_mortons[global_index];
+        barrier();
+        memoryBarrierBuffer();
+    }
 }
