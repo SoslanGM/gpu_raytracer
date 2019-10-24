@@ -1681,7 +1681,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // resources
-    // TODO: rename bvhdata into leafdata
+    // TO DO: rename bvhdata into leafdata
     
     u32 index_datasize = sizeof(u32) * model.index_count;
     VkDeviceMemory model_index_memory;
@@ -2059,573 +2059,500 @@ int CALLBACK WinMain(HINSTANCE instance,
 #endif
     
     
-    // --- sort mortons
-    //u32 worksize = model_tricount;  // 8 groups
-    u32 worksize = 64;
-    u32 checkdigit = 8;
     
-    u32 worksizedata = worksize * sizeof(u32);
-    u32 step3_groupcount = (u32)ceil(worksize/block_size);
     
-    u32 *morton_data = (u32 *)calloc(worksize, sizeof(u32));
-    for(u32 i = 0; i < worksize; i++)
-        morton_data[i] = step2_data[i].morton_code;
     
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    // --- SPLIT KERNEL MORTON SORT ---
+    
+    const u32 blocksize = 32;
+    //u32 worksize = model_tricount;
+    u32 worksize = 32;
+    u32 blockcount = (u32)ceil((r32)worksize / (r32)blocksize);  // I see some padding in the future
+    
+    // - prepare application data
+    u32 *morton_data = (u32 *)malloc(worksize * sizeof(u32));
     for(u32 i = 0; i < worksize; i++)
     {
-        ODS("%3d : %s \n", i, DecToBin(morton_data[i], 32));
+        morton_data[i] = step2_data[i].morton_code;
     }
     
-    // pipeline resources
-    VkShaderModule radix_module = GetShaderModule("../code/radix_comp.spv");
+    // - prepare vulkan data
+    // TO DO: replace CPU-side buffer with a staging buffer and a GPU-side buffer
+    u32 workdata_size = worksize * sizeof(u32);
     
-    VkPipelineShaderStageCreateInfo compipe3_stage = {};
-    compipe3_stage.sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    compipe3_stage.pNext               = NULL;
-    compipe3_stage.flags               = 0;
-    compipe3_stage.stage               = VK_SHADER_STAGE_COMPUTE_BIT;
-    compipe3_stage.module              = radix_module;
-    compipe3_stage.pName               = "main";
-    compipe3_stage.pSpecializationInfo = NULL;
+    VkDeviceMemory mortondata_memory;
+    VkBuffer mortondata_buffer = CreateBuffer(workdata_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                                              vk.device, gpu_memprops,
+                                              &mortondata_memory);
+    VkDeviceMemory flag_vector_zero_memory;
+    VkBuffer flag_vector_zero_buffer = CreateBuffer(workdata_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                                                    vk.device, gpu_memprops,
+                                                    &flag_vector_zero_memory);
+    VkDeviceMemory flag_vector_one_memory;
+    VkBuffer flag_vector_one_buffer = CreateBuffer(workdata_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                                                   vk.device, gpu_memprops,
+                                                   &flag_vector_one_memory);
     
+    void *mortondata_mapptr;
+    vkMapMemory(vk.device, mortondata_memory, 0, workdata_size, 0, &mortondata_mapptr);
+    memcpy(mortondata_mapptr, morton_data, workdata_size);
     
-    VkDescriptorSetLayoutBinding compipe3_dslbinding0 = {};
-    compipe3_dslbinding0.binding            = 0;
-    compipe3_dslbinding0.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_dslbinding0.descriptorCount    = 1;
-    compipe3_dslbinding0.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    compipe3_dslbinding0.pImmutableSamplers = NULL;
+    void *flag_vector_zero_mapptr;
+    vkMapMemory(vk.device, flag_vector_zero_memory, 0, workdata_size, 0, &flag_vector_zero_mapptr);
     
-    VkDescriptorSetLayoutBinding compipe3_dslbinding1 = {};
-    compipe3_dslbinding1.binding            = 1;
-    compipe3_dslbinding1.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_dslbinding1.descriptorCount    = 1;
-    compipe3_dslbinding1.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    compipe3_dslbinding1.pImmutableSamplers = NULL;
-    
-    VkDescriptorSetLayoutBinding compipe3_dslbinding2 = {};
-    compipe3_dslbinding2.binding            = 2;
-    compipe3_dslbinding2.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_dslbinding2.descriptorCount    = 1;
-    compipe3_dslbinding2.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    compipe3_dslbinding2.pImmutableSamplers = NULL;
-    
-    VkDescriptorSetLayoutBinding compipe3_dslbinding3 = {};
-    compipe3_dslbinding3.binding            = 3;
-    compipe3_dslbinding3.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_dslbinding3.descriptorCount    = 1;
-    compipe3_dslbinding3.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    compipe3_dslbinding3.pImmutableSamplers = NULL;
-    
-    VkDescriptorSetLayoutBinding compipe3_dslbinding4 = {};
-    compipe3_dslbinding4.binding            = 4;
-    compipe3_dslbinding4.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_dslbinding4.descriptorCount    = 1;
-    compipe3_dslbinding4.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    compipe3_dslbinding4.pImmutableSamplers = NULL;
-    
-    VkDescriptorSetLayoutBinding compipe3_dslbinding5 = {};
-    compipe3_dslbinding5.binding            = 5;
-    compipe3_dslbinding5.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_dslbinding5.descriptorCount    = 1;
-    compipe3_dslbinding5.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    compipe3_dslbinding5.pImmutableSamplers = NULL;
-    
-    VkDescriptorSetLayoutBinding compipe3_dslbinding6 = {};
-    compipe3_dslbinding6.binding            = 6;
-    compipe3_dslbinding6.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_dslbinding6.descriptorCount    = 1;
-    compipe3_dslbinding6.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    compipe3_dslbinding6.pImmutableSamplers = NULL;
-    
-    VkDescriptorSetLayoutBinding compipe3_dslbinding7 = {};
-    compipe3_dslbinding7.binding            = 7;
-    compipe3_dslbinding7.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_dslbinding7.descriptorCount    = 1;
-    compipe3_dslbinding7.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    compipe3_dslbinding7.pImmutableSamplers = NULL;
-    
-    VkDescriptorSetLayoutBinding compipe3_dslbinding8 = {};
-    compipe3_dslbinding8.binding            = 8;
-    compipe3_dslbinding8.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_dslbinding8.descriptorCount    = 1;
-    compipe3_dslbinding8.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    compipe3_dslbinding8.pImmutableSamplers = NULL;
-    
-    VkDescriptorSetLayoutBinding compipe3_dslbinding9 = {};
-    compipe3_dslbinding9.binding            = 9;
-    compipe3_dslbinding9.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_dslbinding9.descriptorCount    = 1;
-    compipe3_dslbinding9.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    compipe3_dslbinding9.pImmutableSamplers = NULL;
-    
-    VkDescriptorSetLayoutBinding compipe3_dslbinding10 = {};
-    compipe3_dslbinding10.binding            = 10;
-    compipe3_dslbinding10.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_dslbinding10.descriptorCount    = 1;
-    compipe3_dslbinding10.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    compipe3_dslbinding10.pImmutableSamplers = NULL;
+    void *flag_vector_one_mapptr;
+    vkMapMemory(vk.device, flag_vector_one_memory, 0, workdata_size, 0, &flag_vector_one_mapptr);
     
     
+    // - prepare vulkan structures
+    // This time I'll make one "super-format" pipeline, and fill it sparsely...
+    //  You still need to at least recreate the pipeline, if you want to switch shaders.
+    // TO DO: multiple pipelines, with recreation from caches
     
-    VkDescriptorSetLayoutBinding compipe3_dslbindings[] = {
-        compipe3_dslbinding0,
-        compipe3_dslbinding1,
-        compipe3_dslbinding2,
-        compipe3_dslbinding3,
-        compipe3_dslbinding4,
-        compipe3_dslbinding5,
-        compipe3_dslbinding6,
-        compipe3_dslbinding7,
-        compipe3_dslbinding8,
-        compipe3_dslbinding9,
-        compipe3_dslbinding10,
-    };
+    VkDescriptorPoolSize poolsize = {};
+    poolsize.type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolsize.descriptorCount = 10;
     
-    VkDescriptorSetLayoutCreateInfo compipe3_dslci = {};
-    compipe3_dslci.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    compipe3_dslci.pNext        = NULL;
-    compipe3_dslci.flags        = 0;
-    compipe3_dslci.bindingCount = 11;
-    compipe3_dslci.pBindings    = compipe3_dslbindings;
-    
-    VkDescriptorSetLayout compipe3_dsl;
-    vkCreateDescriptorSetLayout(vk.device, &compipe3_dslci, NULL, &compipe3_dsl);
-    
-    
-    VkPushConstantRange compipe3_pcr = {};
-    compipe3_pcr.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    compipe3_pcr.offset     = 0;
-    compipe3_pcr.size       = 2 * sizeof(u32);
-    
-    u32 step3_controls[2];
-    step3_controls[0] = worksize;
-    step3_controls[1] = checkdigit;
-    
-    
-    VkPipelineLayoutCreateInfo compipe3_layoutci = {};
-    compipe3_layoutci.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    compipe3_layoutci.pNext                  = NULL;
-    compipe3_layoutci.flags                  = 0;
-    compipe3_layoutci.setLayoutCount         = 1;
-    compipe3_layoutci.pSetLayouts            = &compipe3_dsl;
-    compipe3_layoutci.pushConstantRangeCount = 1;
-    compipe3_layoutci.pPushConstantRanges    = &compipe3_pcr;
-    
-    VkPipelineLayout compipe3_layout;
-    vkCreatePipelineLayout(vk.device, &compipe3_layoutci, NULL, &compipe3_layout);
-    
-    
-    VkComputePipelineCreateInfo compipe3_ci = {};
-    compipe3_ci.sType              = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    compipe3_ci.pNext              = NULL;
-    compipe3_ci.flags              = 0;
-    compipe3_ci.stage              = compipe3_stage;
-    compipe3_ci.layout             = compipe3_layout;
-    
-    VkPipeline compipe3;
-    vkCreateComputePipelines(vk.device, NULL, 1, &compipe3_ci, NULL, &compipe3);
-    
-    
-    // write resources
-    VkDescriptorPoolSize compipe3_poolsize = {};
-    compipe3_poolsize.type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_poolsize.descriptorCount = 11;
-    
-    VkDescriptorPoolCreateInfo compipe3_poolci = {};
-    compipe3_poolci.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    compipe3_poolci.pNext         = NULL;
-    compipe3_poolci.flags         = 0;
-    compipe3_poolci.maxSets       = 1;
-    compipe3_poolci.poolSizeCount = 1;
-    compipe3_poolci.pPoolSizes    = &compipe3_poolsize;
+    VkDescriptorPoolCreateInfo dspoolci = {};
+    dspoolci.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    dspoolci.pNext         = NULL;
+    dspoolci.flags         = 0;
+    dspoolci.maxSets       = 10;
+    dspoolci.poolSizeCount = 1;
+    dspoolci.pPoolSizes    = &poolsize;
     
     VkDescriptorPool compipe3_dspool;
-    vkCreateDescriptorPool(vk.device, &compipe3_poolci, NULL, &compipe3_dspool);
+    vkCreateDescriptorPool(vk.device, &dspoolci, NULL, &compipe3_dspool);
     
     
     
-    VkDescriptorSetAllocateInfo compipe3_dsai = {};
-    compipe3_dsai.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    compipe3_dsai.pNext              = NULL;
-    compipe3_dsai.descriptorPool     = compipe3_dspool;
-    compipe3_dsai.descriptorSetCount = 1;
-    compipe3_dsai.pSetLayouts        = &compipe3_dsl;
+    VkDescriptorSetLayoutBinding step1_pipeline_binding0 = {};
+    step1_pipeline_binding0.binding            = 0;
+    step1_pipeline_binding0.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step1_pipeline_binding0.descriptorCount    = 1;
+    step1_pipeline_binding0.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
     
-    VkDescriptorSet compipe3_ds;
-    vkAllocateDescriptorSets(vk.device, &compipe3_dsai, &compipe3_ds);
+    VkDescriptorSetLayoutBinding step1_pipeline_binding1 = {};
+    step1_pipeline_binding1.binding            = 1;
+    step1_pipeline_binding1.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step1_pipeline_binding1.descriptorCount    = 1;
+    step1_pipeline_binding1.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
     
-    VkDeviceMemory morton_memory;
-    VkBuffer morton_buffer = CreateBuffer(worksizedata,
-                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-                                          vk.device, gpu_memprops,
-                                          &morton_memory);
-    void *morton_mapptr;
-    vkMapMemory(vk.device, morton_memory, 0, VK_WHOLE_SIZE, 0, &morton_mapptr);
-    memcpy(morton_mapptr, morton_data, worksizedata);
+    VkDescriptorSetLayoutBinding step1_pipeline_binding2 = {};
+    step1_pipeline_binding2.binding            = 2;
+    step1_pipeline_binding2.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step1_pipeline_binding2.descriptorCount    = 1;
+    step1_pipeline_binding2.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
     
-    // Should I prefill all this with 0?
-    VkDeviceMemory zeroes_memory;
-    VkBuffer zeroes_buffer = CreateBuffer(worksizedata,
-                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                          vk.device, gpu_memprops,
-                                          &zeroes_memory);
-    VkDeviceMemory ones_memory;
-    VkBuffer ones_buffer = CreateBuffer(worksizedata,
-                                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                        vk.device, gpu_memprops,
-                                        &ones_memory);
-    
-    VkDeviceMemory scanzeroes_memory;
-    VkBuffer scanzeroes_buffer = CreateBuffer(worksizedata,
-                                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                              vk.device, gpu_memprops,
-                                              &scanzeroes_memory);
-    VkDeviceMemory scanones_memory;
-    VkBuffer scanones_buffer = CreateBuffer(worksizedata,
-                                            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                            vk.device, gpu_memprops,
-                                            &scanones_memory);
-    VkDeviceMemory sumzeroes_memory;
-    VkBuffer sumzeroes_buffer = CreateBuffer(step3_groupcount * sizeof(u32),
-                                             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                             vk.device, gpu_memprops,
-                                             &sumzeroes_memory);
-    
-    VkDeviceMemory sumones_memory;
-    VkBuffer sumones_buffer = CreateBuffer(step3_groupcount * sizeof(u32),
-                                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                           vk.device, gpu_memprops,
-                                           &sumones_memory);
-    VkDeviceMemory sumscanzeroes_memory;
-    VkBuffer sumscanzeroes_buffer = CreateBuffer(step3_groupcount * sizeof(u32),
-                                                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                                 vk.device, gpu_memprops,
-                                                 &sumscanzeroes_memory);
-    
-    VkDeviceMemory sumscanones_memory;
-    VkBuffer sumscanones_buffer = CreateBuffer(step3_groupcount * sizeof(u32),
-                                               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                               vk.device, gpu_memprops,
-                                               &sumscanones_memory);
-    
-    VkDeviceMemory sortedmorton_memory;
-    VkBuffer sortedmorton_buffer = CreateBuffer(worksizedata,
-                                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                                vk.device, gpu_memprops,
-                                                &sortedmorton_memory);
-    VkDeviceMemory presortedmorton_memory;
-    VkBuffer presortedmorton_buffer = CreateBuffer(worksizedata,
-                                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                                   vk.device, gpu_memprops,
-                                                   &presortedmorton_memory);
-    
-    
-    VkDescriptorBufferInfo compipe3_descwrite0bi = {};
-    compipe3_descwrite0bi.buffer = morton_buffer;
-    compipe3_descwrite0bi.offset = 0;
-    compipe3_descwrite0bi.range  = VK_WHOLE_SIZE;
-    
-    VkWriteDescriptorSet compipe3_descwrite0 = {};
-    compipe3_descwrite0.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    compipe3_descwrite0.pNext            = NULL;
-    compipe3_descwrite0.dstSet           = compipe3_ds;
-    compipe3_descwrite0.dstBinding       = 0;
-    compipe3_descwrite0.dstArrayElement  = 0;
-    compipe3_descwrite0.descriptorCount  = 1;
-    compipe3_descwrite0.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_descwrite0.pBufferInfo      = &compipe3_descwrite0bi;
-    
-    
-    VkDescriptorBufferInfo compipe3_descwrite1bi = {};
-    compipe3_descwrite1bi.buffer = zeroes_buffer;
-    compipe3_descwrite1bi.offset = 0;
-    compipe3_descwrite1bi.range  = VK_WHOLE_SIZE;
-    
-    VkWriteDescriptorSet compipe3_descwrite1 = {};
-    compipe3_descwrite1.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    compipe3_descwrite1.pNext            = NULL;
-    compipe3_descwrite1.dstSet           = compipe3_ds;
-    compipe3_descwrite1.dstBinding       = 1;
-    compipe3_descwrite1.dstArrayElement  = 0;
-    compipe3_descwrite1.descriptorCount  = 1;
-    compipe3_descwrite1.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_descwrite1.pBufferInfo      = &compipe3_descwrite1bi;
-    
-    
-    VkDescriptorBufferInfo compipe3_descwrite2bi = {};
-    compipe3_descwrite2bi.buffer = ones_buffer;
-    compipe3_descwrite2bi.offset = 0;
-    compipe3_descwrite2bi.range  = VK_WHOLE_SIZE;
-    
-    VkWriteDescriptorSet compipe3_descwrite2 = {};
-    compipe3_descwrite2.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    compipe3_descwrite2.pNext            = NULL;
-    compipe3_descwrite2.dstSet           = compipe3_ds;
-    compipe3_descwrite2.dstBinding       = 2;
-    compipe3_descwrite2.dstArrayElement  = 0;
-    compipe3_descwrite2.descriptorCount  = 1;
-    compipe3_descwrite2.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_descwrite2.pBufferInfo      = &compipe3_descwrite2bi;
-    
-    VkDescriptorBufferInfo compipe3_descwrite3bi = {};
-    compipe3_descwrite3bi.buffer = scanzeroes_buffer;
-    compipe3_descwrite3bi.offset = 0;
-    compipe3_descwrite3bi.range  = VK_WHOLE_SIZE;
-    
-    VkWriteDescriptorSet compipe3_descwrite3 = {};
-    compipe3_descwrite3.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    compipe3_descwrite3.pNext            = NULL;
-    compipe3_descwrite3.dstSet           = compipe3_ds;
-    compipe3_descwrite3.dstBinding       = 3;
-    compipe3_descwrite3.dstArrayElement  = 0;
-    compipe3_descwrite3.descriptorCount  = 1;
-    compipe3_descwrite3.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_descwrite3.pBufferInfo      = &compipe3_descwrite3bi;
-    
-    VkDescriptorBufferInfo compipe3_descwrite4bi = {};
-    compipe3_descwrite4bi.buffer = scanones_buffer;
-    compipe3_descwrite4bi.offset = 0;
-    compipe3_descwrite4bi.range  = VK_WHOLE_SIZE;
-    
-    VkWriteDescriptorSet compipe3_descwrite4 = {};
-    compipe3_descwrite4.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    compipe3_descwrite4.pNext            = NULL;
-    compipe3_descwrite4.dstSet           = compipe3_ds;
-    compipe3_descwrite4.dstBinding       = 4;
-    compipe3_descwrite4.dstArrayElement  = 0;
-    compipe3_descwrite4.descriptorCount  = 1;
-    compipe3_descwrite4.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_descwrite4.pBufferInfo      = &compipe3_descwrite4bi;
-    
-    
-    VkDescriptorBufferInfo compipe3_descwrite5bi = {};
-    compipe3_descwrite5bi.buffer = sumzeroes_buffer;
-    compipe3_descwrite5bi.offset = 0;
-    compipe3_descwrite5bi.range  = VK_WHOLE_SIZE;
-    
-    VkWriteDescriptorSet compipe3_descwrite5 = {};
-    compipe3_descwrite5.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    compipe3_descwrite5.pNext            = NULL;
-    compipe3_descwrite5.dstSet           = compipe3_ds;
-    compipe3_descwrite5.dstBinding       = 5;
-    compipe3_descwrite5.dstArrayElement  = 0;
-    compipe3_descwrite5.descriptorCount  = 1;
-    compipe3_descwrite5.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_descwrite5.pBufferInfo      = &compipe3_descwrite5bi;
-    
-    VkDescriptorBufferInfo compipe3_descwrite6bi = {};
-    compipe3_descwrite6bi.buffer = sumones_buffer;
-    compipe3_descwrite6bi.offset = 0;
-    compipe3_descwrite6bi.range  = VK_WHOLE_SIZE;
-    
-    VkWriteDescriptorSet compipe3_descwrite6 = {};
-    compipe3_descwrite6.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    compipe3_descwrite6.pNext            = NULL;
-    compipe3_descwrite6.dstSet           = compipe3_ds;
-    compipe3_descwrite6.dstBinding       = 6;
-    compipe3_descwrite6.dstArrayElement  = 0;
-    compipe3_descwrite6.descriptorCount  = 1;
-    compipe3_descwrite6.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_descwrite6.pBufferInfo      = &compipe3_descwrite6bi;
-    
-    VkDescriptorBufferInfo compipe3_descwrite7bi = {};
-    compipe3_descwrite7bi.buffer = sumscanzeroes_buffer;
-    compipe3_descwrite7bi.offset = 0;
-    compipe3_descwrite7bi.range  = VK_WHOLE_SIZE;
-    
-    VkWriteDescriptorSet compipe3_descwrite7 = {};
-    compipe3_descwrite7.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    compipe3_descwrite7.pNext            = NULL;
-    compipe3_descwrite7.dstSet           = compipe3_ds;
-    compipe3_descwrite7.dstBinding       = 7;
-    compipe3_descwrite7.dstArrayElement  = 0;
-    compipe3_descwrite7.descriptorCount  = 1;
-    compipe3_descwrite7.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_descwrite7.pBufferInfo      = &compipe3_descwrite7bi;
-    
-    VkDescriptorBufferInfo compipe3_descwrite8bi = {};
-    compipe3_descwrite8bi.buffer = sumscanones_buffer;
-    compipe3_descwrite8bi.offset = 0;
-    compipe3_descwrite8bi.range  = VK_WHOLE_SIZE;
-    
-    VkWriteDescriptorSet compipe3_descwrite8 = {};
-    compipe3_descwrite8.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    compipe3_descwrite8.pNext            = NULL;
-    compipe3_descwrite8.dstSet           = compipe3_ds;
-    compipe3_descwrite8.dstBinding       = 8;
-    compipe3_descwrite8.dstArrayElement  = 0;
-    compipe3_descwrite8.descriptorCount  = 1;
-    compipe3_descwrite8.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_descwrite8.pBufferInfo      = &compipe3_descwrite8bi;
-    
-    
-    VkDescriptorBufferInfo compipe3_descwrite9bi = {};
-    compipe3_descwrite9bi.buffer = sortedmorton_buffer;
-    compipe3_descwrite9bi.offset = 0;
-    compipe3_descwrite9bi.range  = VK_WHOLE_SIZE;
-    
-    VkWriteDescriptorSet compipe3_descwrite9 = {};
-    compipe3_descwrite9.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    compipe3_descwrite9.pNext            = NULL;
-    compipe3_descwrite9.dstSet           = compipe3_ds;
-    compipe3_descwrite9.dstBinding       = 9;
-    compipe3_descwrite9.dstArrayElement  = 0;
-    compipe3_descwrite9.descriptorCount  = 1;
-    compipe3_descwrite9.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_descwrite9.pBufferInfo      = &compipe3_descwrite9bi;
-    
-    
-    VkDescriptorBufferInfo compipe3_descwrite10bi = {};
-    compipe3_descwrite10bi.buffer = presortedmorton_buffer;
-    compipe3_descwrite10bi.offset = 0;
-    compipe3_descwrite10bi.range  = VK_WHOLE_SIZE;
-    
-    VkWriteDescriptorSet compipe3_descwrite10 = {};
-    compipe3_descwrite10.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    compipe3_descwrite10.pNext            = NULL;
-    compipe3_descwrite10.dstSet           = compipe3_ds;
-    compipe3_descwrite10.dstBinding       = 10;
-    compipe3_descwrite10.dstArrayElement  = 0;
-    compipe3_descwrite10.descriptorCount  = 1;
-    compipe3_descwrite10.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_descwrite10.pBufferInfo      = &compipe3_descwrite10bi;
-    
-    
-    VkWriteDescriptorSet compipe3_descwrites[] = { 
-        compipe3_descwrite0,
-        compipe3_descwrite1,
-        compipe3_descwrite2,
-        compipe3_descwrite3,
-        compipe3_descwrite4,
-        compipe3_descwrite5,
-        compipe3_descwrite6,
-        compipe3_descwrite7,
-        compipe3_descwrite8,
-        compipe3_descwrite9,
-        compipe3_descwrite10,
+    VkDescriptorSetLayoutBinding step1_pipeline_dslbindings[] = {
+        step1_pipeline_binding0,
+        step1_pipeline_binding1,
+        step1_pipeline_binding2
     };
     
-    vkUpdateDescriptorSets(vk.device, 11, compipe3_descwrites, 0, NULL);
+    VkDescriptorSetLayoutCreateInfo step1_pipeline_dslayout_ci = {};
+    step1_pipeline_dslayout_ci.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    step1_pipeline_dslayout_ci.pNext        = NULL;
+    step1_pipeline_dslayout_ci.flags        = 0;
+    step1_pipeline_dslayout_ci.bindingCount = 3;
+    step1_pipeline_dslayout_ci.pBindings    = step1_pipeline_dslbindings;
+    
+    VkDescriptorSetLayout step1_pipeline_dslayout;
+    vkCreateDescriptorSetLayout(vk.device, &step1_pipeline_dslayout_ci, NULL, &step1_pipeline_dslayout);
     
     
-    // record cmdbuffer
-    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-    vkCmdBindDescriptorSets(commandbuffer, bindpoint_compute, compipe3_layout, 0, 1, &compipe3_ds, 0, NULL);
-    vkCmdBindPipeline(commandbuffer, bindpoint_compute, compipe3);
-    vkCmdPushConstants(commandbuffer, compipe3_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 2 * sizeof(u32), step3_controls);
-    vkCmdDispatch(commandbuffer, step3_groupcount, 1, 1);
-    vkEndCommandBuffer(commandbuffer);
+    VkPushConstantRange step1_pipeline_pcr = {};
+    step1_pipeline_pcr.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    step1_pipeline_pcr.offset     = 0;
+    step1_pipeline_pcr.size       = 2 * sizeof(u32);
     
-    // execute cmdbuffer
-    vkQueueSubmit(vk.queue, 1, &compute_si, fence);
-    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-    vkResetFences(vk.device, 1, &fence);
+    VkPipelineLayoutCreateInfo step1_pipeline_layout_ci = {};
+    step1_pipeline_layout_ci.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    step1_pipeline_layout_ci.pNext                  = NULL;
+    step1_pipeline_layout_ci.flags                  = 0;
+    step1_pipeline_layout_ci.setLayoutCount         = 1;
+    step1_pipeline_layout_ci.pSetLayouts            = &step1_pipeline_dslayout;
+    step1_pipeline_layout_ci.pushConstantRangeCount = 1;
+    step1_pipeline_layout_ci.pPushConstantRanges    = &step1_pipeline_pcr;  // thread count, digit place
     
-    // - check stuff along the way
-    u32 *zeroes_data = (u32 *)malloc(worksizedata);
-    void *zeroesdata_mapptr;
-    vkMapMemory(vk.device, zeroes_memory, 0, VK_WHOLE_SIZE, 0, &zeroesdata_mapptr);
-    memcpy(zeroes_data, zeroesdata_mapptr, worksizedata);
-    
-    u32 *ones_data = (u32 *)malloc(worksizedata);
-    void *onesdata_mapptr;
-    vkMapMemory(vk.device, ones_memory, 0, VK_WHOLE_SIZE, 0, &onesdata_mapptr);
-    memcpy(ones_data, onesdata_mapptr, worksizedata);
-    
-    u32 *zeroscan_data = (u32 *)malloc(worksizedata);
-    void *zeroscandata_mapptr;
-    vkMapMemory(vk.device, scanzeroes_memory, 0, VK_WHOLE_SIZE, 0, &zeroscandata_mapptr);
-    memcpy(zeroscan_data, zeroscandata_mapptr, worksizedata);
-    
-    u32 *onescan_data = (u32 *)malloc(worksizedata);
-    void *onescandata_mapptr;
-    vkMapMemory(vk.device, scanones_memory, 0, VK_WHOLE_SIZE, 0, &onescandata_mapptr);
-    memcpy(onescan_data, onescandata_mapptr, worksizedata);
+    VkPipelineLayout step1_pipeline_layout;
+    vkCreatePipelineLayout(vk.device, &step1_pipeline_layout_ci, NULL, &step1_pipeline_layout);
     
     
-    u32 *sumzeroes_data = (u32 *)malloc(step3_groupcount * sizeof(u32));
-    void *sumzeroesdata_mapptr;
-    vkMapMemory(vk.device, sumzeroes_memory, 0, VK_WHOLE_SIZE, 0, &sumzeroesdata_mapptr);
-    memcpy(sumzeroes_data, sumzeroesdata_mapptr, step3_groupcount * sizeof(u32));
+    VkShaderModule step1_module = GetShaderModule("../code/step1_shader.spv");
     
-    u32 *sumones_data = (u32 *)malloc(step3_groupcount * sizeof(u32));
-    void *sumonesdata_mapptr;
-    vkMapMemory(vk.device, sumones_memory, 0, VK_WHOLE_SIZE, 0, &sumonesdata_mapptr);
-    memcpy(sumones_data, sumonesdata_mapptr, step3_groupcount * sizeof(u32));
+    VkPipelineShaderStageCreateInfo step1_pipeline_stage = {};
+    step1_pipeline_stage.sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    step1_pipeline_stage.pNext               = NULL;
+    step1_pipeline_stage.flags               = 0;
+    step1_pipeline_stage.stage               = VK_SHADER_STAGE_COMPUTE_BIT;
+    step1_pipeline_stage.module              = step1_module;
+    step1_pipeline_stage.pName               = "main";
     
-    u32 *sumzeroscan_data = (u32 *)malloc(step3_groupcount * sizeof(u32));
-    void *sumzeroscandata_mapptr;
-    vkMapMemory(vk.device, sumscanzeroes_memory, 0, VK_WHOLE_SIZE, 0, &sumzeroscandata_mapptr);
-    memcpy(sumzeroscan_data, sumzeroscandata_mapptr, step3_groupcount * sizeof(u32));
+    VkComputePipelineCreateInfo step1_pipeline_ci = {};
+    step1_pipeline_ci.sType              = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    step1_pipeline_ci.pNext              = NULL;
+    step1_pipeline_ci.flags              = 0;
+    step1_pipeline_ci.stage              = step1_pipeline_stage;
+    step1_pipeline_ci.layout             = step1_pipeline_layout;
     
-    u32 *sumonescan_data = (u32 *)malloc(step3_groupcount * sizeof(u32));
-    void *sumonescandata_mapptr;
-    vkMapMemory(vk.device, sumscanones_memory, 0, VK_WHOLE_SIZE, 0, &sumonescandata_mapptr);
-    memcpy(sumonescan_data, sumonescandata_mapptr, step3_groupcount * sizeof(u32));
+    VkPipeline step1_pipeline;
+    vkCreateComputePipelines(vk.device, NULL, 1, &step1_pipeline_ci, NULL, &step1_pipeline);
     
     
+    VkDescriptorSetAllocateInfo step1_pipeline_dsai = {};
+    step1_pipeline_dsai.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    step1_pipeline_dsai.pNext              = NULL;
+    step1_pipeline_dsai.descriptorPool     = compipe3_dspool;
+    step1_pipeline_dsai.descriptorSetCount = 1;
+    step1_pipeline_dsai.pSetLayouts        = &step1_pipeline_dslayout;
+    VkDescriptorSet step1_pipeline_dset;
+    vkAllocateDescriptorSets(vk.device, &step1_pipeline_dsai, &step1_pipeline_dset);
     
-    // read sorted data
-    u32 *morton_result = (u32 *)malloc(worksizedata);
-    //void *sortedmorton_mapptr;
-    //vkMapMemory(vk.device, sortedmorton_memory, 0, VK_WHOLE_SIZE, 0, &sortedmorton_mapptr);
-    memcpy(morton_result, morton_mapptr, worksizedata);
     
-    u32 *presorted = (u32 *)malloc(worksizedata);
-    void *presorted_mapptr;
-    vkMapMemory(vk.device, presortedmorton_memory, 0, VK_WHOLE_SIZE, 0, &presorted_mapptr);
-    memcpy(presorted, presorted_mapptr, worksizedata);
+    VkDescriptorBufferInfo step1_pipeline_descwrite0_bi = {};
+    step1_pipeline_descwrite0_bi.buffer = mortondata_buffer;
+    step1_pipeline_descwrite0_bi.offset = 0;
+    step1_pipeline_descwrite0_bi.range  = VK_WHOLE_SIZE;
     
-    // check if it's sorted properly
-    ODS("Presorted: \n");
-    for(u32 i = 0; i < worksize; i++)
+    VkWriteDescriptorSet step1_pipeline_descwrite0 = {};
+    step1_pipeline_descwrite0.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    step1_pipeline_descwrite0.pNext            = NULL;
+    step1_pipeline_descwrite0.dstSet           = step1_pipeline_dset;
+    step1_pipeline_descwrite0.dstBinding       = 0;
+    step1_pipeline_descwrite0.dstArrayElement  = 0;
+    step1_pipeline_descwrite0.descriptorCount  = 1;
+    step1_pipeline_descwrite0.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step1_pipeline_descwrite0.pBufferInfo      = &step1_pipeline_descwrite0_bi;
+    
+    
+    VkDescriptorBufferInfo step1_pipeline_descwrite1_bi = {};
+    step1_pipeline_descwrite1_bi.buffer = flag_vector_zero_buffer;
+    step1_pipeline_descwrite1_bi.offset = 0;
+    step1_pipeline_descwrite1_bi.range  = VK_WHOLE_SIZE;
+    
+    VkWriteDescriptorSet step1_pipeline_descwrite1 = {};
+    step1_pipeline_descwrite1.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    step1_pipeline_descwrite1.pNext            = NULL;
+    step1_pipeline_descwrite1.dstSet           = step1_pipeline_dset;
+    step1_pipeline_descwrite1.dstBinding       = 1;
+    step1_pipeline_descwrite1.dstArrayElement  = 0;
+    step1_pipeline_descwrite1.descriptorCount  = 1;
+    step1_pipeline_descwrite1.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step1_pipeline_descwrite1.pBufferInfo      = &step1_pipeline_descwrite1_bi;
+    
+    
+    VkDescriptorBufferInfo step1_pipeline_descwrite2_bi = {};
+    step1_pipeline_descwrite2_bi.buffer = flag_vector_one_buffer;
+    step1_pipeline_descwrite2_bi.offset = 0;
+    step1_pipeline_descwrite2_bi.range  = VK_WHOLE_SIZE;
+    
+    VkWriteDescriptorSet step1_pipeline_descwrite2 = {};
+    step1_pipeline_descwrite2.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    step1_pipeline_descwrite2.pNext            = NULL;
+    step1_pipeline_descwrite2.dstSet           = step1_pipeline_dset;
+    step1_pipeline_descwrite2.dstBinding       = 2;
+    step1_pipeline_descwrite2.dstArrayElement  = 0;
+    step1_pipeline_descwrite2.descriptorCount  = 1;
+    step1_pipeline_descwrite2.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step1_pipeline_descwrite2.pBufferInfo      = &step1_pipeline_descwrite2_bi;
+    
+    VkWriteDescriptorSet step1_pipeline_descwrites[] = {
+        step1_pipeline_descwrite0,
+        step1_pipeline_descwrite1,
+        step1_pipeline_descwrite2
+    };
+    
+    VkPipelineBindPoint pipeline_bindpoint = VK_PIPELINE_BIND_POINT_COMPUTE;
+    
+    // for each of the digit places...
+    u32 bitwidth = 32;
+    //u32 process_digitcount = bitwidth;
+    u32 process_digitcount = 1;
+    
+    u32 step1_pcr[2];
+    step1_pcr[0] = worksize;
+    step1_pcr[1] = process_digitcount;
+    
+    for(u32 i = 0; i < process_digitcount; i++)
     {
-        ODS(" %3d : %s \n", i, DecToBin(presorted[i], 32));
+        // Step 1: flag vectors
+        vkUpdateDescriptorSets(vk.device, 3, step1_pipeline_descwrites, 0, NULL);
+        
+        // - execute kernel
+        vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
+        vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, step1_pipeline_layout, 0, 1, &step1_pipeline_dset, 0, NULL);
+        vkCmdPushConstants(commandbuffer, step1_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 2 * sizeof(u32), step1_pcr);
+        vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, step1_pipeline);
+        vkCmdDispatch(commandbuffer, blockcount, 1, 1);
+        vkEndCommandBuffer(commandbuffer);
+        
+        vkQueueSubmit(vk.queue, 1, &compute_si, fence);
+        vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
+        vkResetFences(vk.device, 1, &fence);
+        
+        // - read output
+        u32 *step1_output_flag_vector_zero = (u32 *)malloc(workdata_size);
+        u32 *step1_output_flag_vector_one  = (u32 *)malloc(workdata_size);
+        memcpy(step1_output_flag_vector_zero, flag_vector_zero_mapptr, workdata_size);
+        memcpy(step1_output_flag_vector_one,  flag_vector_one_mapptr,  workdata_size);
+        
+        // - verify results
+        u32 *step1_check_flag_vector_zero = (u32 *)malloc(workdata_size);
+        u32 *step1_check_flag_vector_one  = (u32 *)malloc(workdata_size);
+        for(u32 j = 0; j < worksize; j++)
+        {
+            u32 bit = ((morton_data[j] & (1 << i)) >> i) & 1;
+            step1_check_flag_vector_zero[j] = bit;
+            step1_check_flag_vector_one[j]  = (bit == 1) ? 0 : 1;
+        }
+        
+        ODS("Data: \n");
+        for(u32 j = 0; j < worksize; j++)
+        {
+            ODS("%s \n", DecToBin(morton_data[j], 32));
+        }
+        ODS("Read by GPU: \n");
+        for(u32 j = 0; j < worksize; j++)
+        {
+            ODS("%d", step1_output_flag_vector_zero[j]);
+        }
+        ODS("\n");
+        for(u32 j = 0; j < worksize; j++)
+        {
+            ODS("%d", step1_output_flag_vector_one[j]);
+        }
+        ODS("\n");
+        ODS("Read by CPU: \n");
+        for(u32 j = 0; j < worksize; j++)
+        {
+            ODS("%d", step1_check_flag_vector_zero[j]);
+        }
+        ODS("\n");
+        for(u32 j = 0; j < worksize; j++)
+        {
+            ODS("%d", step1_check_flag_vector_one[j]);
+        }
+        
+#if 0
+        // Step 2: block sums
+        
+        
+        
+        
+        vkBeginCommandBuffer();
+        vkCmdBindDescriptorSets();
+        vkCmdPushConstants();
+        vkCmdBindPipeline();
+        vkCmdDispatch();
+        vkEndCommandBuffer();
+        
+        vkQueueSubmit();
+        vkWaitForFences();
+        vkResetFences();
+        
+        
+        
+        // Step 3: sum scans
+        
+        
+        
+        
+        vkBeginCommandBuffer();
+        vkCmdBindDescriptorSets();
+        vkCmdPushConstants();
+        vkCmdBindPipeline();
+        vkCmdDispatch();
+        vkEndCommandBuffer();
+        
+        vkQueueSubmit();
+        vkWaitForFences();
+        vkResetFences();
+        
+        
+        
+        // Step 4: vector scans
+        
+        
+        
+        
+        vkBeginCommandBuffer();
+        vkCmdBindDescriptorSets();
+        vkCmdPushConstants();
+        vkCmdBindPipeline();
+        vkCmdDispatch();
+        vkEndCommandBuffer();
+        
+        vkQueueSubmit();
+        vkWaitForFences();
+        vkResetFences();
+        
+        
+        
+        // Step 5: modify scans
+        
+        
+        
+        
+        vkBeginCommandBuffer();
+        vkCmdBindDescriptorSets();
+        vkCmdPushConstants();
+        vkCmdBindPipeline();
+        vkCmdDispatch();
+        vkEndCommandBuffer();
+        
+        vkQueueSubmit();
+        vkWaitForFences();
+        vkResetFences();
+        
+        
+        
+        // Step 6: redistribute values
+        
+        
+        
+        
+        vkBeginCommandBuffer();
+        vkCmdBindDescriptorSets();
+        vkCmdPushConstants();
+        vkCmdBindPipeline();
+        vkCmdDispatch();
+        vkEndCommandBuffer();
+        
+        vkQueueSubmit();
+        vkWaitForFences();
+        vkResetFences();
+#endif
     }
-    ODS("\n");
-    
-    ODS("Sorted: \n");
-    for(u32 i = 0; i < worksize; i++)
-    {
-        ODS(" %3d : %s \n", i, DecToBin(morton_result[i], 32));
-    }
-    
-    bool digitres = CheckMortonSorting_Digit(morton_result, worksize, checkdigit);
-    ODS("Digit %2d check %s \n", checkdigit, (digitres == true) ? "successful" : "unsuccessful");
-    
-    ODS("Digits before %d: \n", checkdigit);
-    for(u32 i = 0; i < worksize; i++)
-    {
-        u32 bit = ((presorted[i] & (1<<checkdigit)) >> checkdigit);
-        ODS("%d", bit);
-    }
-    ODS("\n");
-    
-    ODS("Digits after %d: \n", checkdigit);
-    for(u32 i = 0; i < worksize; i++)
-    {
-        u32 bit = ((morton_result[i] & (1<<checkdigit)) >> checkdigit);
-        ODS("%d", bit);
-    }
-    ODS("\n");
-    
     
     exit(0);
     
     
     // ---
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     
     
