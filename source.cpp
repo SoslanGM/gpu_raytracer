@@ -930,7 +930,20 @@ void CheckMortonSorting(u32 *data, u32 count)
     }
     ODS("All good. \n");
 }
-
+bool CheckMortonSorting_Digit(u32 *data, u32 count, u32 digit)
+{
+    for(u32 i = 0; i < count-1; i++)
+    {
+        u32 firstbit  = ((data[i]   & (1 << digit)) >> digit);
+        u32 secondbit = ((data[i+1] & (1 << digit)) >> digit);
+        if(firstbit > secondbit)
+        {
+            ODS("Debug! \n");
+            return false;
+        }
+    }
+    return true;
+}
 
 #define RD 0
 
@@ -2048,7 +2061,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     // --- sort mortons
     //u32 worksize = model_tricount;  // 8 groups
-    u32 worksize = 32;  // 8 groups
+    u32 worksize = 64;
+    u32 checkdigit = 8;
     
     u32 worksizedata = worksize * sizeof(u32);
     u32 step3_groupcount = (u32)ceil(worksize/block_size);
@@ -2145,6 +2159,13 @@ int CALLBACK WinMain(HINSTANCE instance,
     compipe3_dslbinding9.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
     compipe3_dslbinding9.pImmutableSamplers = NULL;
     
+    VkDescriptorSetLayoutBinding compipe3_dslbinding10 = {};
+    compipe3_dslbinding10.binding            = 10;
+    compipe3_dslbinding10.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_dslbinding10.descriptorCount    = 1;
+    compipe3_dslbinding10.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+    compipe3_dslbinding10.pImmutableSamplers = NULL;
+    
     
     
     VkDescriptorSetLayoutBinding compipe3_dslbindings[] = {
@@ -2157,14 +2178,15 @@ int CALLBACK WinMain(HINSTANCE instance,
         compipe3_dslbinding6,
         compipe3_dslbinding7,
         compipe3_dslbinding8,
-        compipe3_dslbinding9
+        compipe3_dslbinding9,
+        compipe3_dslbinding10,
     };
     
     VkDescriptorSetLayoutCreateInfo compipe3_dslci = {};
     compipe3_dslci.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     compipe3_dslci.pNext        = NULL;
     compipe3_dslci.flags        = 0;
-    compipe3_dslci.bindingCount = 10;
+    compipe3_dslci.bindingCount = 11;
     compipe3_dslci.pBindings    = compipe3_dslbindings;
     
     VkDescriptorSetLayout compipe3_dsl;
@@ -2174,7 +2196,12 @@ int CALLBACK WinMain(HINSTANCE instance,
     VkPushConstantRange compipe3_pcr = {};
     compipe3_pcr.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     compipe3_pcr.offset     = 0;
-    compipe3_pcr.size       = sizeof(u32);
+    compipe3_pcr.size       = 2 * sizeof(u32);
+    
+    u32 step3_controls[2];
+    step3_controls[0] = worksize;
+    step3_controls[1] = checkdigit;
+    
     
     VkPipelineLayoutCreateInfo compipe3_layoutci = {};
     compipe3_layoutci.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -2203,7 +2230,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     // write resources
     VkDescriptorPoolSize compipe3_poolsize = {};
     compipe3_poolsize.type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe3_poolsize.descriptorCount = 10;
+    compipe3_poolsize.descriptorCount = 11;
     
     VkDescriptorPoolCreateInfo compipe3_poolci = {};
     compipe3_poolci.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -2297,6 +2324,12 @@ int CALLBACK WinMain(HINSTANCE instance,
                                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                                 vk.device, gpu_memprops,
                                                 &sortedmorton_memory);
+    VkDeviceMemory presortedmorton_memory;
+    VkBuffer presortedmorton_buffer = CreateBuffer(worksizedata,
+                                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                                   vk.device, gpu_memprops,
+                                                   &presortedmorton_memory);
     
     
     VkDescriptorBufferInfo compipe3_descwrite0bi = {};
@@ -2454,6 +2487,22 @@ int CALLBACK WinMain(HINSTANCE instance,
     compipe3_descwrite9.pBufferInfo      = &compipe3_descwrite9bi;
     
     
+    VkDescriptorBufferInfo compipe3_descwrite10bi = {};
+    compipe3_descwrite10bi.buffer = presortedmorton_buffer;
+    compipe3_descwrite10bi.offset = 0;
+    compipe3_descwrite10bi.range  = VK_WHOLE_SIZE;
+    
+    VkWriteDescriptorSet compipe3_descwrite10 = {};
+    compipe3_descwrite10.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    compipe3_descwrite10.pNext            = NULL;
+    compipe3_descwrite10.dstSet           = compipe3_ds;
+    compipe3_descwrite10.dstBinding       = 10;
+    compipe3_descwrite10.dstArrayElement  = 0;
+    compipe3_descwrite10.descriptorCount  = 1;
+    compipe3_descwrite10.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    compipe3_descwrite10.pBufferInfo      = &compipe3_descwrite10bi;
+    
+    
     VkWriteDescriptorSet compipe3_descwrites[] = { 
         compipe3_descwrite0,
         compipe3_descwrite1,
@@ -2465,16 +2514,17 @@ int CALLBACK WinMain(HINSTANCE instance,
         compipe3_descwrite7,
         compipe3_descwrite8,
         compipe3_descwrite9,
+        compipe3_descwrite10,
     };
     
-    vkUpdateDescriptorSets(vk.device, 10, compipe3_descwrites, 0, NULL);
+    vkUpdateDescriptorSets(vk.device, 11, compipe3_descwrites, 0, NULL);
     
     
     // record cmdbuffer
     vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
     vkCmdBindDescriptorSets(commandbuffer, bindpoint_compute, compipe3_layout, 0, 1, &compipe3_ds, 0, NULL);
     vkCmdBindPipeline(commandbuffer, bindpoint_compute, compipe3);
-    vkCmdPushConstants(commandbuffer, compipe3_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(u32), &worksize);
+    vkCmdPushConstants(commandbuffer, compipe3_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 2 * sizeof(u32), step3_controls);
     vkCmdDispatch(commandbuffer, step3_groupcount, 1, 1);
     vkEndCommandBuffer(commandbuffer);
     
@@ -2533,8 +2583,44 @@ int CALLBACK WinMain(HINSTANCE instance,
     //vkMapMemory(vk.device, sortedmorton_memory, 0, VK_WHOLE_SIZE, 0, &sortedmorton_mapptr);
     memcpy(morton_result, morton_mapptr, worksizedata);
     
+    u32 *presorted = (u32 *)malloc(worksizedata);
+    void *presorted_mapptr;
+    vkMapMemory(vk.device, presortedmorton_memory, 0, VK_WHOLE_SIZE, 0, &presorted_mapptr);
+    memcpy(presorted, presorted_mapptr, worksizedata);
+    
     // check if it's sorted properly
-    CheckMortonSorting(morton_result, worksize);
+    ODS("Presorted: \n");
+    for(u32 i = 0; i < worksize; i++)
+    {
+        ODS(" %3d : %s \n", i, DecToBin(presorted[i], 32));
+    }
+    ODS("\n");
+    
+    ODS("Sorted: \n");
+    for(u32 i = 0; i < worksize; i++)
+    {
+        ODS(" %3d : %s \n", i, DecToBin(morton_result[i], 32));
+    }
+    
+    bool digitres = CheckMortonSorting_Digit(morton_result, worksize, checkdigit);
+    ODS("Digit %2d check %s \n", checkdigit, (digitres == true) ? "successful" : "unsuccessful");
+    
+    ODS("Digits before %d: \n", checkdigit);
+    for(u32 i = 0; i < worksize; i++)
+    {
+        u32 bit = ((presorted[i] & (1<<checkdigit)) >> checkdigit);
+        ODS("%d", bit);
+    }
+    ODS("\n");
+    
+    ODS("Digits after %d: \n", checkdigit);
+    for(u32 i = 0; i < worksize; i++)
+    {
+        u32 bit = ((morton_result[i] & (1<<checkdigit)) >> checkdigit);
+        ODS("%d", bit);
+    }
+    ODS("\n");
+    
     
     exit(0);
     
