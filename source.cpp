@@ -945,6 +945,145 @@ bool CheckMortonSorting_Digit(u32 *data, u32 count, u32 digit)
     return true;
 }
 
+
+
+
+
+typedef struct
+{
+    VkDescriptorType type;
+    VkBuffer buffer;
+    VkDeviceMemory memory;
+} resource_record;
+typedef struct 
+{
+    string *shader_file;
+    u32 resource_count;
+    resource_record *resources;
+    u32 pcr_size;
+    u32 *pcr_data;  // u32 or r32 isn't important, important is the size of 4 bytes
+} in_struct;
+typedef struct
+{
+    u32 descwrite_count;
+    VkWriteDescriptorSet *descwrites;
+    VkDescriptorSet pipe_dset;
+    VkDescriptorSetLayout pipe_dslayout;
+    VkPipelineLayout pipe_layout;
+    VkPipeline pipe;
+} out_struct;
+
+// v1
+out_struct *CreateComputePipeline(in_struct *in)
+{
+    out_struct *out = (out_struct *)calloc(1, sizeof(out_struct));
+    
+    // v1 - easy mode, only one descriptor type.
+    // TO DO: v2 - count the various descriptor types, and accordingly create descriptor pools
+    VkDescriptorPoolSize poolsize;
+    poolsize.type            = in->resources[0].type;
+    poolsize.descriptorCount = in->resource_count;
+    
+    VkDescriptorPoolCreateInfo dspoolci = {};
+    dspoolci.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    dspoolci.pNext         = NULL;
+    dspoolci.flags         = 0;
+    dspoolci.maxSets       = in->resource_count;
+    dspoolci.poolSizeCount = 1;
+    dspoolci.pPoolSizes    = &poolsize;
+    VkDescriptorPool dspool;
+    vkCreateDescriptorPool(vk.device, &dspoolci, NULL, &dspool);
+    
+    
+    
+    u32 running_binding_index = 0;
+    VkDescriptorSetLayoutBinding *bindings = (VkDescriptorSetLayoutBinding *)calloc(in->resource_count, sizeof(VkDescriptorSetLayoutBinding));
+    for(u32 i = 0; i < in->resource_count; i++)
+    {
+        bindings[i].binding         = i;
+        bindings[i].descriptorType  = in->resources[i].type;
+        bindings[i].descriptorCount = 1;
+        bindings[i].stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+    
+    VkDescriptorSetLayoutCreateInfo dslayout_ci = {};
+    dslayout_ci.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    dslayout_ci.pNext        = NULL;
+    dslayout_ci.flags        = 0;
+    dslayout_ci.bindingCount = in->resource_count;
+    dslayout_ci.pBindings    = bindings;
+    vkCreateDescriptorSetLayout(vk.device, &dslayout_ci, NULL, &out->pipe_dslayout);
+    
+    
+    
+    VkPushConstantRange pcr = {};
+    pcr.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    pcr.offset     = 0;
+    pcr.size       = in->pcr_size * sizeof(u32);
+    
+    VkPipelineLayoutCreateInfo layout_ci = {};
+    layout_ci.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layout_ci.pNext                  = NULL;
+    layout_ci.flags                  = 0;
+    layout_ci.setLayoutCount         = 1;
+    layout_ci.pSetLayouts            = &out->pipe_dslayout;
+    layout_ci.pushConstantRangeCount = 1;
+    layout_ci.pPushConstantRanges    = &pcr;  // thread count, digit place
+    vkCreatePipelineLayout(vk.device, &layout_ci, NULL, &out->pipe_layout);
+    
+    
+    
+    VkShaderModule module = GetShaderModule(in->shader_file->ptr);
+    
+    VkPipelineShaderStageCreateInfo stage = {};
+    stage.sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stage.pNext               = NULL;
+    stage.flags               = 0;
+    stage.stage               = VK_SHADER_STAGE_COMPUTE_BIT;
+    stage.module              = module;
+    stage.pName               = "main";
+    
+    VkComputePipelineCreateInfo ci = {};
+    ci.sType              = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    ci.pNext              = NULL;
+    ci.flags              = 0;
+    ci.stage              = stage;
+    ci.layout             = out->pipe_layout;
+    vkCreateComputePipelines(vk.device, NULL, 1, &ci, NULL, &out->pipe);
+    
+    
+    
+    VkDescriptorSetAllocateInfo dsai = {};
+    dsai.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    dsai.pNext              = NULL;
+    dsai.descriptorPool     = dspool;
+    dsai.descriptorSetCount = 1;
+    dsai.pSetLayouts        = &out->pipe_dslayout;
+    vkAllocateDescriptorSets(vk.device, &dsai, &out->pipe_dset);
+    
+    out->descwrite_count = in->resource_count;
+    out->descwrites = (VkWriteDescriptorSet *)calloc(out->descwrite_count, sizeof(VkWriteDescriptorSet));
+    for(u32 i = 0; i < out->descwrite_count; i++)
+    {
+        VkDescriptorBufferInfo *bi = (VkDescriptorBufferInfo *)calloc(1, sizeof(VkDescriptorBufferInfo));
+        bi->buffer = in->resources[i].buffer;
+        bi->offset = 0;
+        bi->range  = VK_WHOLE_SIZE;
+        
+        out->descwrites[i].sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        out->descwrites[i].pNext            = NULL;
+        out->descwrites[i].dstSet           = out->pipe_dset;
+        out->descwrites[i].dstBinding       = i;
+        out->descwrites[i].dstArrayElement  = 0;
+        out->descwrites[i].descriptorCount  = 1;
+        out->descwrites[i].descriptorType   = in->resources[i].type;
+        out->descwrites[i].pBufferInfo      = bi;
+    }
+    
+    return out;
+}
+
+
 #define RD 0
 
 int CALLBACK WinMain(HINSTANCE instance,
@@ -2123,12 +2262,27 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // --- SPLIT KERNEL MORTON SORT ---
-    
+    // --- variables
     const u32 blocksize = 32;
     //u32 worksize = model_tricount;
     u32 worksize = 32;
     u32 blockcount = (u32)ceil((r32)worksize / (r32)blocksize);  // I see some padding in the future
     
+    // for each of the digit places...
+    u32 bitwidth = 32;
+    //u32 process_digitcount = bitwidth;
+    u32 process_digitcount = 1;
+    
+    // push constants: int+pointer.
+    u32 step1_pcr[2];
+    step1_pcr[0] = worksize;
+    step1_pcr[1] = process_digitcount;
+    
+    VkPipelineBindPoint pipeline_bindpoint = VK_PIPELINE_BIND_POINT_COMPUTE;
+    
+    
+    
+    // --- data
     // - prepare application data
     u32 *morton_data = (u32 *)malloc(worksize * sizeof(u32));
     for(u32 i = 0; i < worksize; i++)
@@ -2172,6 +2326,43 @@ int CALLBACK WinMain(HINSTANCE instance,
     //  You still need to at least recreate the pipeline, if you want to switch shaders.
     // TO DO: multiple pipelines, with recreation from caches
     
+    
+    
+    // --- abstraction
+    
+    // What do I want from pipeline abstraction:
+    // - specify shader file.
+    // - specify resources.
+    //  That's it. Have each pipeline come up with its own pool etc.
+    //   A better system would've counted all the slots across all the pipelines first and
+    //   produced appropriate pools. ...Maybe just a single one?...
+    //   But that's probably metaprogramming.
+    
+    in_struct *in = (in_struct *)calloc(1, sizeof(in_struct));
+    in->shader_file = (string *)calloc(1, sizeof(string));
+    in->shader_file->ptr    = "../code/step1_shader.spv";
+    in->shader_file->length = strlen(in->shader_file->ptr);
+    
+    in->resource_count = 3;
+    in->resources = (resource_record *)calloc(in->resource_count, sizeof(resource_record));
+    in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    in->resources[0].buffer = mortondata_buffer;
+    in->resources[0].memory = mortondata_memory;
+    in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    in->resources[1].buffer = flag_vector_zero_buffer;
+    in->resources[1].memory = flag_vector_zero_memory;
+    in->resources[2].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    in->resources[2].buffer = flag_vector_one_buffer;
+    in->resources[2].memory = flag_vector_one_memory;
+    
+    in->pcr_size = 2;
+    in->pcr_data = (u32 *)calloc(in->pcr_size, sizeof(u32));
+    in->pcr_data[0] = worksize;
+    in->pcr_data[1] = process_digitcount;
+    
+    out_struct *out = CreateComputePipeline(in);
+    
+#if 0
     VkDescriptorPoolSize poolsize = {};
     poolsize.type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     poolsize.descriptorCount = 10;
@@ -2190,23 +2381,22 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     VkDescriptorSetLayoutBinding step1_pipeline_binding0 = {};
-    step1_pipeline_binding0.binding            = 0;
-    step1_pipeline_binding0.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    step1_pipeline_binding0.descriptorCount    = 1;
-    step1_pipeline_binding0.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    
+    step1_pipeline_binding0.binding            = 0;                                  // auto increment
+    step1_pipeline_binding0.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;  // pass
+    step1_pipeline_binding0.descriptorCount    = 1;                                  // pass
+    step1_pipeline_binding0.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;        // auto
     VkDescriptorSetLayoutBinding step1_pipeline_binding1 = {};
     step1_pipeline_binding1.binding            = 1;
     step1_pipeline_binding1.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     step1_pipeline_binding1.descriptorCount    = 1;
     step1_pipeline_binding1.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    
     VkDescriptorSetLayoutBinding step1_pipeline_binding2 = {};
     step1_pipeline_binding2.binding            = 2;
     step1_pipeline_binding2.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     step1_pipeline_binding2.descriptorCount    = 1;
     step1_pipeline_binding2.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
     
+    // replace with array declaration first, then fill out the values
     VkDescriptorSetLayoutBinding step1_pipeline_dslbindings[] = {
         step1_pipeline_binding0,
         step1_pipeline_binding1,
@@ -2222,6 +2412,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     VkDescriptorSetLayout step1_pipeline_dslayout;
     vkCreateDescriptorSetLayout(vk.device, &step1_pipeline_dslayout_ci, NULL, &step1_pipeline_dslayout);
+    
     
     
     VkPushConstantRange step1_pipeline_pcr = {};
@@ -2240,6 +2431,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     VkPipelineLayout step1_pipeline_layout;
     vkCreatePipelineLayout(vk.device, &step1_pipeline_layout_ci, NULL, &step1_pipeline_layout);
+    
     
     
     VkShaderModule step1_module = GetShaderModule("../code/step1_shader.spv");
@@ -2263,6 +2455,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkCreateComputePipelines(vk.device, NULL, 1, &step1_pipeline_ci, NULL, &step1_pipeline);
     
     
+    
     VkDescriptorSetAllocateInfo step1_pipeline_dsai = {};
     step1_pipeline_dsai.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     step1_pipeline_dsai.pNext              = NULL;
@@ -2273,10 +2466,11 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkAllocateDescriptorSets(vk.device, &step1_pipeline_dsai, &step1_pipeline_dset);
     
     
+    
     VkDescriptorBufferInfo step1_pipeline_descwrite0_bi = {};
-    step1_pipeline_descwrite0_bi.buffer = mortondata_buffer;
-    step1_pipeline_descwrite0_bi.offset = 0;
-    step1_pipeline_descwrite0_bi.range  = VK_WHOLE_SIZE;
+    step1_pipeline_descwrite0_bi.buffer = mortondata_buffer;  // pass in
+    step1_pipeline_descwrite0_bi.offset = 0;                  // auto
+    step1_pipeline_descwrite0_bi.range  = VK_WHOLE_SIZE;      // auto
     
     VkWriteDescriptorSet step1_pipeline_descwrite0 = {};
     step1_pipeline_descwrite0.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -2287,7 +2481,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     step1_pipeline_descwrite0.descriptorCount  = 1;
     step1_pipeline_descwrite0.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     step1_pipeline_descwrite0.pBufferInfo      = &step1_pipeline_descwrite0_bi;
-    
     
     VkDescriptorBufferInfo step1_pipeline_descwrite1_bi = {};
     step1_pipeline_descwrite1_bi.buffer = flag_vector_zero_buffer;
@@ -2303,7 +2496,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     step1_pipeline_descwrite1.descriptorCount  = 1;
     step1_pipeline_descwrite1.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     step1_pipeline_descwrite1.pBufferInfo      = &step1_pipeline_descwrite1_bi;
-    
     
     VkDescriptorBufferInfo step1_pipeline_descwrite2_bi = {};
     step1_pipeline_descwrite2_bi.buffer = flag_vector_one_buffer;
@@ -2326,19 +2518,15 @@ int CALLBACK WinMain(HINSTANCE instance,
         step1_pipeline_descwrite2
     };
     
-    VkPipelineBindPoint pipeline_bindpoint = VK_PIPELINE_BIND_POINT_COMPUTE;
+#endif
     
-    // for each of the digit places...
-    u32 bitwidth = 32;
-    //u32 process_digitcount = bitwidth;
-    u32 process_digitcount = 1;
-    
-    u32 step1_pcr[2];
-    step1_pcr[0] = worksize;
-    step1_pcr[1] = process_digitcount;
+    // seems like it's a good idea to have some kind of a return structure as well.
+    // - push constants stuff, bindpoint: copy from input
+    // - pipe layout, pipeline, descriptor set, descriptor writes: output
     
     for(u32 i = 0; i < process_digitcount; i++)
     {
+#if 0
         // Step 1: flag vectors
         vkUpdateDescriptorSets(vk.device, 3, step1_pipeline_descwrites, 0, NULL);
         
@@ -2347,6 +2535,16 @@ int CALLBACK WinMain(HINSTANCE instance,
         vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, step1_pipeline_layout, 0, 1, &step1_pipeline_dset, 0, NULL);
         vkCmdPushConstants(commandbuffer, step1_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 2 * sizeof(u32), step1_pcr);
         vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, step1_pipeline);
+        vkCmdDispatch(commandbuffer, blockcount, 1, 1);
+        vkEndCommandBuffer(commandbuffer);
+#endif
+        
+        vkUpdateDescriptorSets(vk.device, out->descwrite_count, out->descwrites, 0, NULL);
+        
+        vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
+        vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, out->pipe_layout, 0, 1, &out->pipe_dset, 0, NULL);
+        vkCmdPushConstants(commandbuffer, out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, in->pcr_size * sizeof(u32), in->pcr_data);
+        vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, out->pipe);
         vkCmdDispatch(commandbuffer, blockcount, 1, 1);
         vkEndCommandBuffer(commandbuffer);
         
