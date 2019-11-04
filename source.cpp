@@ -955,7 +955,7 @@ typedef struct
     VkBuffer buffer;
     VkDeviceMemory memory;
 } resource_record;
-typedef struct 
+typedef struct
 {
     string *shader_file;
     u32 resource_count;
@@ -1016,19 +1016,27 @@ out_struct *CreateComputePipeline(in_struct *in)
     
     
     
-    VkPushConstantRange pcr = {};
-    pcr.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    pcr.offset     = 0;
-    pcr.size       = in->pcr_size * sizeof(u32);
-    
     VkPipelineLayoutCreateInfo layout_ci = {};
     layout_ci.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     layout_ci.pNext                  = NULL;
     layout_ci.flags                  = 0;
     layout_ci.setLayoutCount         = 1;
     layout_ci.pSetLayouts            = &out->pipe_dslayout;
-    layout_ci.pushConstantRangeCount = 1;
-    layout_ci.pPushConstantRanges    = &pcr;  // thread count, digit place
+    if(in->pcr_size > 0)
+    {
+        VkPushConstantRange pcr = {};
+        pcr.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        pcr.offset     = 0;
+        pcr.size       = in->pcr_size * sizeof(u32);
+        
+        layout_ci.pushConstantRangeCount = 1;
+        layout_ci.pPushConstantRanges    = &pcr;  // thread count, digit place
+    }
+    else
+    {
+        layout_ci.pushConstantRangeCount = 0;
+        layout_ci.pPushConstantRanges    = NULL;
+    }
     vkCreatePipelineLayout(vk.device, &layout_ci, NULL, &out->pipe_layout);
     
     
@@ -1151,8 +1159,14 @@ int CALLBACK WinMain(HINSTANCE instance,
     };
     u32 layer_count = sizeof(layer_names)/sizeof(layer_names[0]);
     
+#define val 1
+    
     GetVulkanInstance(ext_names,   ext_count,
+                      #if val
                       layer_names, layer_count);
+#elif !val
+    NULL, 0);
+#endif
     
     ODS("Here's a Vulkan instance: 0x%p\n", &vk.instance);
     Vulkan_LoadExtensionFunctions(vk.instance);
@@ -1401,7 +1415,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // Compute
-    // - prepare a render target 
+    // - prepare a render target
     VkImage computed_image;
     VkImageView computed_imageview;
     VkDeviceMemory computed_imagememory;
@@ -1639,7 +1653,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     u32 thread_count = model_tricount;
     u32 block_count = (u32)ceil((r32)thread_count / (r32)block_size);
     
-    struct 
+    struct
     {
         u32 thread_count;
         u32 read_offset;
@@ -2270,8 +2284,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     // for each of the digit places...
     u32 bitwidth = 32;
-    //u32 process_digitcount = bitwidth;
-    u32 process_digitcount = 1;
+    u32 process_digitcount = bitwidth;
+    //u32 process_digitcount = 1;
     
     // push constants: int+pointer.
     u32 step1_pcr[2];
@@ -2282,8 +2296,30 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
-    // --- data
-    // - prepare application data
+    // - prepare vulkan structures
+    // This time I'll make one "super-format" pipeline, and fill it sparsely...
+    //  You still need to at least recreate the pipeline, if you want to switch shaders.
+    // TO DO: multiple pipelines, with recreation from caches
+    
+    
+    
+    // --- abstraction
+    
+    // What do I want from pipeline abstraction:
+    // - specify shader file.
+    // - specify resources.
+    //  That's it. Have each pipeline come up with its own pool etc.
+    //   A better system would've counted all the slots across all the pipelines first and
+    //   produced appropriate pools. ...Maybe just a single one?...
+    //   But that's probably metaprogramming.
+    
+    // seems like it's a good idea to have some kind of a return structure as well.
+    // - push constants stuff, bindpoint: copy from input
+    // - pipe layout, pipeline, descriptor set, descriptor writes: output
+    
+    
+    
+    // step 1
     u32 *morton_data = (u32 *)malloc(worksize * sizeof(u32));
     for(u32 i = 0; i < worksize; i++)
     {
@@ -2315,236 +2351,267 @@ int CALLBACK WinMain(HINSTANCE instance,
     memcpy(mortondata_mapptr, morton_data, workdata_size);
     
     void *flag_vector_zero_mapptr;
-    vkMapMemory(vk.device, flag_vector_zero_memory, 0, workdata_size, 0, &flag_vector_zero_mapptr);
+    vkMapMemory(vk.device, flag_vector_zero_memory, 0, VK_WHOLE_SIZE, 0, &flag_vector_zero_mapptr);
     
     void *flag_vector_one_mapptr;
-    vkMapMemory(vk.device, flag_vector_one_memory, 0, workdata_size, 0, &flag_vector_one_mapptr);
-    
-    
-    // - prepare vulkan structures
-    // This time I'll make one "super-format" pipeline, and fill it sparsely...
-    //  You still need to at least recreate the pipeline, if you want to switch shaders.
-    // TO DO: multiple pipelines, with recreation from caches
+    vkMapMemory(vk.device, flag_vector_one_memory, 0, VK_WHOLE_SIZE, 0, &flag_vector_one_mapptr);
     
     
     
-    // --- abstraction
+    in_struct *step1_in = (in_struct *)calloc(1, sizeof(in_struct));
+    step1_in->shader_file = String("../code/step1_shader.spv");
     
-    // What do I want from pipeline abstraction:
-    // - specify shader file.
-    // - specify resources.
-    //  That's it. Have each pipeline come up with its own pool etc.
-    //   A better system would've counted all the slots across all the pipelines first and
-    //   produced appropriate pools. ...Maybe just a single one?...
-    //   But that's probably metaprogramming.
+    step1_in->resource_count = 3;
+    step1_in->resources = (resource_record *)calloc(step1_in->resource_count, sizeof(resource_record));
+    step1_in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step1_in->resources[0].buffer = mortondata_buffer;
+    step1_in->resources[0].memory = mortondata_memory;
+    step1_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step1_in->resources[1].buffer = flag_vector_zero_buffer;
+    step1_in->resources[1].memory = flag_vector_zero_memory;
+    step1_in->resources[2].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step1_in->resources[2].buffer = flag_vector_one_buffer;
+    step1_in->resources[2].memory = flag_vector_one_memory;
     
-    in_struct *in = (in_struct *)calloc(1, sizeof(in_struct));
-    in->shader_file = (string *)calloc(1, sizeof(string));
-    in->shader_file->ptr    = "../code/step1_shader.spv";
-    in->shader_file->length = strlen(in->shader_file->ptr);
+    step1_in->pcr_size = 2;
+    step1_in->pcr_data = (u32 *)calloc(step1_in->pcr_size, sizeof(u32));
+    step1_in->pcr_data[0] = worksize;
     
-    in->resource_count = 3;
-    in->resources = (resource_record *)calloc(in->resource_count, sizeof(resource_record));
-    in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    in->resources[0].buffer = mortondata_buffer;
-    in->resources[0].memory = mortondata_memory;
-    in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    in->resources[1].buffer = flag_vector_zero_buffer;
-    in->resources[1].memory = flag_vector_zero_memory;
-    in->resources[2].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    in->resources[2].buffer = flag_vector_one_buffer;
-    in->resources[2].memory = flag_vector_one_memory;
-    
-    in->pcr_size = 2;
-    in->pcr_data = (u32 *)calloc(in->pcr_size, sizeof(u32));
-    in->pcr_data[0] = worksize;
-    in->pcr_data[1] = process_digitcount;
-    
-    out_struct *out = CreateComputePipeline(in);
-    
-#if 0
-    VkDescriptorPoolSize poolsize = {};
-    poolsize.type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolsize.descriptorCount = 10;
-    
-    VkDescriptorPoolCreateInfo dspoolci = {};
-    dspoolci.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    dspoolci.pNext         = NULL;
-    dspoolci.flags         = 0;
-    dspoolci.maxSets       = 10;
-    dspoolci.poolSizeCount = 1;
-    dspoolci.pPoolSizes    = &poolsize;
-    
-    VkDescriptorPool compipe3_dspool;
-    vkCreateDescriptorPool(vk.device, &dspoolci, NULL, &compipe3_dspool);
+    out_struct *step1_out = CreateComputePipeline(step1_in);
     
     
     
-    VkDescriptorSetLayoutBinding step1_pipeline_binding0 = {};
-    step1_pipeline_binding0.binding            = 0;                                  // auto increment
-    step1_pipeline_binding0.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;  // pass
-    step1_pipeline_binding0.descriptorCount    = 1;                                  // pass
-    step1_pipeline_binding0.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;        // auto
-    VkDescriptorSetLayoutBinding step1_pipeline_binding1 = {};
-    step1_pipeline_binding1.binding            = 1;
-    step1_pipeline_binding1.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    step1_pipeline_binding1.descriptorCount    = 1;
-    step1_pipeline_binding1.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    VkDescriptorSetLayoutBinding step1_pipeline_binding2 = {};
-    step1_pipeline_binding2.binding            = 2;
-    step1_pipeline_binding2.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    step1_pipeline_binding2.descriptorCount    = 1;
-    step1_pipeline_binding2.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+    // step 2
+    VkDeviceMemory scan_vector_zero_memory;
+    VkBuffer scan_vector_zero_buffer = CreateBuffer(workdata_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                                                    vk.device, gpu_memprops,
+                                                    &scan_vector_zero_memory);
+    VkDeviceMemory scan_vector_one_memory;
+    VkBuffer scan_vector_one_buffer = CreateBuffer(workdata_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                                                   vk.device, gpu_memprops,
+                                                   &scan_vector_one_memory);
     
-    // replace with array declaration first, then fill out the values
-    VkDescriptorSetLayoutBinding step1_pipeline_dslbindings[] = {
-        step1_pipeline_binding0,
-        step1_pipeline_binding1,
-        step1_pipeline_binding2
-    };
+    void *scan_vector_zero_mapptr;
+    vkMapMemory(vk.device, scan_vector_zero_memory, 0, VK_WHOLE_SIZE, 0, &scan_vector_zero_mapptr);
     
-    VkDescriptorSetLayoutCreateInfo step1_pipeline_dslayout_ci = {};
-    step1_pipeline_dslayout_ci.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    step1_pipeline_dslayout_ci.pNext        = NULL;
-    step1_pipeline_dslayout_ci.flags        = 0;
-    step1_pipeline_dslayout_ci.bindingCount = 3;
-    step1_pipeline_dslayout_ci.pBindings    = step1_pipeline_dslbindings;
-    
-    VkDescriptorSetLayout step1_pipeline_dslayout;
-    vkCreateDescriptorSetLayout(vk.device, &step1_pipeline_dslayout_ci, NULL, &step1_pipeline_dslayout);
+    void *scan_vector_one_mapptr;
+    vkMapMemory(vk.device, scan_vector_one_memory, 0, VK_WHOLE_SIZE, 0, &scan_vector_one_mapptr);
     
     
     
-    VkPushConstantRange step1_pipeline_pcr = {};
-    step1_pipeline_pcr.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    step1_pipeline_pcr.offset     = 0;
-    step1_pipeline_pcr.size       = 2 * sizeof(u32);
+    in_struct *step2_in = (in_struct *)calloc(1, sizeof(in_struct));
+    step2_in->shader_file = String("../code/step2_shader.spv");
     
-    VkPipelineLayoutCreateInfo step1_pipeline_layout_ci = {};
-    step1_pipeline_layout_ci.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    step1_pipeline_layout_ci.pNext                  = NULL;
-    step1_pipeline_layout_ci.flags                  = 0;
-    step1_pipeline_layout_ci.setLayoutCount         = 1;
-    step1_pipeline_layout_ci.pSetLayouts            = &step1_pipeline_dslayout;
-    step1_pipeline_layout_ci.pushConstantRangeCount = 1;
-    step1_pipeline_layout_ci.pPushConstantRanges    = &step1_pipeline_pcr;  // thread count, digit place
+    step2_in->resource_count = 4;
+    step2_in->resources = (resource_record *)calloc(step2_in->resource_count, sizeof(resource_record));
+    step2_in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step2_in->resources[0].buffer = flag_vector_zero_buffer;
+    step2_in->resources[0].memory = flag_vector_zero_memory;
+    step2_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step2_in->resources[1].buffer = flag_vector_one_buffer;
+    step2_in->resources[1].memory = flag_vector_one_memory;
+    step2_in->resources[2].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step2_in->resources[2].buffer = scan_vector_zero_buffer;
+    step2_in->resources[2].memory = scan_vector_zero_memory;
+    step2_in->resources[3].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step2_in->resources[3].buffer = scan_vector_one_buffer;
+    step2_in->resources[3].memory = scan_vector_one_memory;
     
-    VkPipelineLayout step1_pipeline_layout;
-    vkCreatePipelineLayout(vk.device, &step1_pipeline_layout_ci, NULL, &step1_pipeline_layout);
+    step2_in->pcr_size = 1;
+    step2_in->pcr_data = (u32 *)calloc(step2_in->pcr_size, sizeof(u32));
+    step2_in->pcr_data[0] = worksize;
     
-    
-    
-    VkShaderModule step1_module = GetShaderModule("../code/step1_shader.spv");
-    
-    VkPipelineShaderStageCreateInfo step1_pipeline_stage = {};
-    step1_pipeline_stage.sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    step1_pipeline_stage.pNext               = NULL;
-    step1_pipeline_stage.flags               = 0;
-    step1_pipeline_stage.stage               = VK_SHADER_STAGE_COMPUTE_BIT;
-    step1_pipeline_stage.module              = step1_module;
-    step1_pipeline_stage.pName               = "main";
-    
-    VkComputePipelineCreateInfo step1_pipeline_ci = {};
-    step1_pipeline_ci.sType              = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    step1_pipeline_ci.pNext              = NULL;
-    step1_pipeline_ci.flags              = 0;
-    step1_pipeline_ci.stage              = step1_pipeline_stage;
-    step1_pipeline_ci.layout             = step1_pipeline_layout;
-    
-    VkPipeline step1_pipeline;
-    vkCreateComputePipelines(vk.device, NULL, 1, &step1_pipeline_ci, NULL, &step1_pipeline);
+    out_struct *step2_out = CreateComputePipeline(step2_in);
     
     
     
-    VkDescriptorSetAllocateInfo step1_pipeline_dsai = {};
-    step1_pipeline_dsai.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    step1_pipeline_dsai.pNext              = NULL;
-    step1_pipeline_dsai.descriptorPool     = compipe3_dspool;
-    step1_pipeline_dsai.descriptorSetCount = 1;
-    step1_pipeline_dsai.pSetLayouts        = &step1_pipeline_dslayout;
-    VkDescriptorSet step1_pipeline_dset;
-    vkAllocateDescriptorSets(vk.device, &step1_pipeline_dsai, &step1_pipeline_dset);
+    // step 3 - flag vector sums
+    // in: 2 flag vectors, [datasize]
+    // out: 2 sum vectors, [blockcount]
+    VkDeviceMemory flag_sum_zero_memory;
+    VkBuffer flag_sum_zero_buffer = CreateBuffer(blockcount * sizeof(u32), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                                                 vk.device, gpu_memprops,
+                                                 &flag_sum_zero_memory);
+    VkDeviceMemory flag_sum_one_memory;
+    VkBuffer flag_sum_one_buffer = CreateBuffer(blockcount * sizeof(u32), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                                                vk.device, gpu_memprops,
+                                                &flag_sum_one_memory);
+    
+    void *flag_sum_zero_mapptr;
+    vkMapMemory(vk.device, flag_sum_zero_memory, 0, VK_WHOLE_SIZE, 0, &flag_sum_zero_mapptr);
+    
+    void *flag_sum_one_mapptr;
+    vkMapMemory(vk.device, flag_sum_one_memory, 0, VK_WHOLE_SIZE, 0, &flag_sum_one_mapptr);
     
     
     
-    VkDescriptorBufferInfo step1_pipeline_descwrite0_bi = {};
-    step1_pipeline_descwrite0_bi.buffer = mortondata_buffer;  // pass in
-    step1_pipeline_descwrite0_bi.offset = 0;                  // auto
-    step1_pipeline_descwrite0_bi.range  = VK_WHOLE_SIZE;      // auto
+    in_struct *step3_in = (in_struct *)calloc(1, sizeof(in_struct));
+    step3_in->shader_file = String("../code/step3_shader.spv");
     
-    VkWriteDescriptorSet step1_pipeline_descwrite0 = {};
-    step1_pipeline_descwrite0.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    step1_pipeline_descwrite0.pNext            = NULL;
-    step1_pipeline_descwrite0.dstSet           = step1_pipeline_dset;
-    step1_pipeline_descwrite0.dstBinding       = 0;
-    step1_pipeline_descwrite0.dstArrayElement  = 0;
-    step1_pipeline_descwrite0.descriptorCount  = 1;
-    step1_pipeline_descwrite0.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    step1_pipeline_descwrite0.pBufferInfo      = &step1_pipeline_descwrite0_bi;
+    step3_in->resource_count = 4;
     
-    VkDescriptorBufferInfo step1_pipeline_descwrite1_bi = {};
-    step1_pipeline_descwrite1_bi.buffer = flag_vector_zero_buffer;
-    step1_pipeline_descwrite1_bi.offset = 0;
-    step1_pipeline_descwrite1_bi.range  = VK_WHOLE_SIZE;
+    step3_in->resources = (resource_record *)calloc(step3_in->resource_count, sizeof(resource_record));
+    step3_in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step3_in->resources[0].buffer = flag_vector_zero_buffer;
+    step3_in->resources[0].memory = flag_vector_zero_memory;
+    step3_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step3_in->resources[1].buffer = flag_vector_one_buffer;
+    step3_in->resources[1].memory = flag_vector_one_memory;
+    step3_in->resources[2].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step3_in->resources[2].buffer = flag_sum_zero_buffer;
+    step3_in->resources[2].memory = flag_sum_zero_memory;
+    step3_in->resources[3].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step3_in->resources[3].buffer = flag_sum_one_buffer;
+    step3_in->resources[3].memory = flag_sum_one_memory;
     
-    VkWriteDescriptorSet step1_pipeline_descwrite1 = {};
-    step1_pipeline_descwrite1.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    step1_pipeline_descwrite1.pNext            = NULL;
-    step1_pipeline_descwrite1.dstSet           = step1_pipeline_dset;
-    step1_pipeline_descwrite1.dstBinding       = 1;
-    step1_pipeline_descwrite1.dstArrayElement  = 0;
-    step1_pipeline_descwrite1.descriptorCount  = 1;
-    step1_pipeline_descwrite1.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    step1_pipeline_descwrite1.pBufferInfo      = &step1_pipeline_descwrite1_bi;
+    step3_in->pcr_size = 1;
+    step3_in->pcr_data = (u32 *)calloc(step3_in->pcr_size, sizeof(u32));
+    step3_in->pcr_data[0] = worksize;
     
-    VkDescriptorBufferInfo step1_pipeline_descwrite2_bi = {};
-    step1_pipeline_descwrite2_bi.buffer = flag_vector_one_buffer;
-    step1_pipeline_descwrite2_bi.offset = 0;
-    step1_pipeline_descwrite2_bi.range  = VK_WHOLE_SIZE;
+    out_struct *step3_out = CreateComputePipeline(step3_in);
     
-    VkWriteDescriptorSet step1_pipeline_descwrite2 = {};
-    step1_pipeline_descwrite2.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    step1_pipeline_descwrite2.pNext            = NULL;
-    step1_pipeline_descwrite2.dstSet           = step1_pipeline_dset;
-    step1_pipeline_descwrite2.dstBinding       = 2;
-    step1_pipeline_descwrite2.dstArrayElement  = 0;
-    step1_pipeline_descwrite2.descriptorCount  = 1;
-    step1_pipeline_descwrite2.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    step1_pipeline_descwrite2.pBufferInfo      = &step1_pipeline_descwrite2_bi;
     
-    VkWriteDescriptorSet step1_pipeline_descwrites[] = {
-        step1_pipeline_descwrite0,
-        step1_pipeline_descwrite1,
-        step1_pipeline_descwrite2
-    };
     
-#endif
+    // step 4 - sum scan
+    VkDeviceMemory sum_scan_memory;
+    VkBuffer sum_scan_buffer = CreateBuffer(2 * blockcount * sizeof(u32), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                            vk.device, gpu_memprops,
+                                            &sum_scan_memory);
     
-    // seems like it's a good idea to have some kind of a return structure as well.
-    // - push constants stuff, bindpoint: copy from input
-    // - pipe layout, pipeline, descriptor set, descriptor writes: output
+    void *sum_scan_mapptr;
+    vkMapMemory(vk.device, sum_scan_memory, 0, VK_WHOLE_SIZE, 0, &sum_scan_mapptr);
+    
+    
+    
+    in_struct *step4_in = (in_struct *)calloc(1, sizeof(in_struct));
+    step4_in->shader_file = String("../code/step4_shader.spv");
+    
+    step4_in->resource_count = 3;
+    
+    step4_in->resources = (resource_record *)calloc(step4_in->resource_count, sizeof(resource_record));
+    step4_in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step4_in->resources[0].buffer = flag_sum_zero_buffer;
+    step4_in->resources[0].memory = flag_sum_zero_memory;
+    step4_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step4_in->resources[1].buffer = flag_sum_one_buffer;
+    step4_in->resources[1].memory = flag_sum_one_memory;
+    step4_in->resources[2].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step4_in->resources[2].buffer = sum_scan_buffer;
+    step4_in->resources[2].memory = sum_scan_memory;
+    
+    out_struct *step4_out = CreateComputePipeline(step4_in);
+    
+    
+    
+    // step 5
+    in_struct *step5_in = (in_struct *)calloc(1, sizeof(in_struct));
+    step5_in->shader_file = String("../code/step5_shader.spv");
+    
+    step5_in->resource_count = 3;
+    
+    step5_in->resources = (resource_record *)calloc(step5_in->resource_count, sizeof(resource_record));
+    step5_in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step5_in->resources[0].buffer = scan_vector_zero_buffer;
+    step5_in->resources[0].memory = scan_vector_zero_memory;
+    step5_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step5_in->resources[1].buffer = scan_vector_one_buffer;
+    step5_in->resources[1].memory = scan_vector_one_memory;
+    step5_in->resources[2].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step5_in->resources[2].buffer = sum_scan_buffer;
+    step5_in->resources[2].memory = sum_scan_memory;
+    
+    step5_in->pcr_size = 1;
+    step5_in->pcr_data = (u32 *)calloc(step5_in->pcr_size, sizeof(u32));
+    step5_in->pcr_data[0] = worksize;
+    
+    out_struct *step5_out = CreateComputePipeline(step5_in);
+    
+    
+    
+    // step 6
+    in_struct *step6_in = (in_struct *)calloc(1, sizeof(in_struct));
+    step6_in->shader_file = String("../code/step6_shader.spv");
+    
+    step6_in->resource_count = 6;
+    
+    VkDeviceMemory sorted_mortons_memory;
+    VkBuffer sorted_mortons_buffer = CreateBuffer(workdata_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                                                  vk.device, gpu_memprops,
+                                                  &sorted_mortons_memory);
+    
+    void *sorted_mortons_mapptr;
+    vkMapMemory(vk.device, sorted_mortons_memory, 0, VK_WHOLE_SIZE, 0, &sorted_mortons_mapptr);
+    
+    
+    step6_in->resources = (resource_record *)calloc(step6_in->resource_count, sizeof(resource_record));
+    step6_in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step6_in->resources[0].buffer = flag_vector_zero_buffer;
+    step6_in->resources[0].memory = flag_vector_zero_memory;
+    step6_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step6_in->resources[1].buffer = flag_vector_one_buffer;
+    step6_in->resources[1].memory = flag_vector_one_memory;
+    
+    step6_in->resources[2].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step6_in->resources[2].buffer = scan_vector_zero_buffer;
+    step6_in->resources[2].memory = scan_vector_zero_memory;
+    step6_in->resources[3].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step6_in->resources[3].buffer = scan_vector_one_buffer;
+    step6_in->resources[3].memory = scan_vector_one_memory;
+    
+    step6_in->resources[4].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step6_in->resources[4].buffer = mortondata_buffer;
+    step6_in->resources[4].memory = mortondata_memory;
+    step6_in->resources[5].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step6_in->resources[5].buffer = sorted_mortons_buffer;
+    step6_in->resources[5].memory = sorted_mortons_memory;
+    
+    step6_in->pcr_size = 1;
+    step6_in->pcr_data = (u32 *)calloc(step6_in->pcr_size, sizeof(u32));
+    step6_in->pcr_data[0] = worksize;
+    
+    out_struct *step6_out = CreateComputePipeline(step6_in);
+    
+    
+    
+    // step 7 - copy sorted back into inputs
+    in_struct *step7_in = (in_struct *)calloc(1, sizeof(in_struct));
+    step7_in->shader_file = String("../code/step7_shader.spv");
+    
+    step7_in->resource_count = 2;
+    
+    step7_in->resources = (resource_record *)calloc(step7_in->resource_count, sizeof(resource_record));
+    step7_in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step7_in->resources[0].buffer = sorted_mortons_buffer;
+    step7_in->resources[0].memory = sorted_mortons_memory;
+    step7_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    step7_in->resources[1].buffer = mortondata_buffer;
+    step7_in->resources[1].memory = mortondata_memory;
+    
+    step7_in->pcr_size = 1;
+    step7_in->pcr_data = (u32 *)calloc(step7_in->pcr_size, sizeof(u32));
+    step7_in->pcr_data[0] = worksize;
+    
+    out_struct *step7_out = CreateComputePipeline(step7_in);
+    
+    
     
     for(u32 i = 0; i < process_digitcount; i++)
     {
-#if 0
-        // Step 1: flag vectors
-        vkUpdateDescriptorSets(vk.device, 3, step1_pipeline_descwrites, 0, NULL);
+        ODS("> PROCESSING DIGIT %d \n", i);
         
-        // - execute kernel
-        vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-        vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, step1_pipeline_layout, 0, 1, &step1_pipeline_dset, 0, NULL);
-        vkCmdPushConstants(commandbuffer, step1_pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 2 * sizeof(u32), step1_pcr);
-        vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, step1_pipeline);
-        vkCmdDispatch(commandbuffer, blockcount, 1, 1);
-        vkEndCommandBuffer(commandbuffer);
-#endif
-        
-        vkUpdateDescriptorSets(vk.device, out->descwrite_count, out->descwrites, 0, NULL);
+        step1_in->pcr_data[1] = i;
+        vkUpdateDescriptorSets(vk.device, step1_out->descwrite_count, step1_out->descwrites, 0, NULL);
         
         vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-        vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, out->pipe_layout, 0, 1, &out->pipe_dset, 0, NULL);
-        vkCmdPushConstants(commandbuffer, out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, in->pcr_size * sizeof(u32), in->pcr_data);
-        vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, out->pipe);
+        vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, step1_out->pipe_layout, 0, 1, &step1_out->pipe_dset, 0, NULL);
+        vkCmdPushConstants(commandbuffer, step1_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, step1_in->pcr_size * sizeof(u32), step1_in->pcr_data);
+        vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, step1_out->pipe);
         vkCmdDispatch(commandbuffer, blockcount, 1, 1);
         vkEndCommandBuffer(commandbuffer);
         
@@ -2553,10 +2620,12 @@ int CALLBACK WinMain(HINSTANCE instance,
         vkResetFences(vk.device, 1, &fence);
         
         // - read output
-        u32 *step1_output_flag_vector_zero = (u32 *)malloc(workdata_size);
-        u32 *step1_output_flag_vector_one  = (u32 *)malloc(workdata_size);
+        u32 *step1_output_flag_vector_zero = (u32 *)calloc(1, workdata_size);
         memcpy(step1_output_flag_vector_zero, flag_vector_zero_mapptr, workdata_size);
-        memcpy(step1_output_flag_vector_one,  flag_vector_one_mapptr,  workdata_size);
+        
+        u32 *step1_output_flag_vector_one  = (u32 *)calloc(1, workdata_size);
+        memcpy(step1_output_flag_vector_one, flag_vector_one_mapptr, workdata_size);
+        
         
         // - verify results
         u32 *step1_check_flag_vector_zero = (u32 *)malloc(workdata_size);
@@ -2564,127 +2633,367 @@ int CALLBACK WinMain(HINSTANCE instance,
         for(u32 j = 0; j < worksize; j++)
         {
             u32 bit = ((morton_data[j] & (1 << i)) >> i) & 1;
-            step1_check_flag_vector_zero[j] = bit;
-            step1_check_flag_vector_one[j]  = (bit == 1) ? 0 : 1;
+            step1_check_flag_vector_zero[j] = (bit == 0) ? 1 : 0;
+            step1_check_flag_vector_one[j]  = bit;
         }
         
+        ODS("\n STEP 1 \n");
         ODS("Data: \n");
         for(u32 j = 0; j < worksize; j++)
         {
             ODS("%s \n", DecToBin(morton_data[j], 32));
         }
-        ODS("Read by GPU: \n");
+        ODS("Read by GPU: \n|");
         for(u32 j = 0; j < worksize; j++)
         {
-            ODS("%d", step1_output_flag_vector_zero[j]);
+            ODS("%2d|", step1_output_flag_vector_zero[j]);
+        }
+        ODS("\n|");
+        for(u32 j = 0; j < worksize; j++)
+        {
+            ODS("%2d|", step1_output_flag_vector_one[j]);
         }
         ODS("\n");
+        ODS("Read by CPU: \n|");
         for(u32 j = 0; j < worksize; j++)
         {
-            ODS("%d", step1_output_flag_vector_one[j]);
+            ODS("%2d|", step1_check_flag_vector_zero[j]);
+        }
+        ODS("\n|");
+        for(u32 j = 0; j < worksize; j++)
+        {
+            ODS("%2d|", step1_check_flag_vector_one[j]);
         }
         ODS("\n");
-        ODS("Read by CPU: \n");
+        
+        ODS("Verification: ");
+        bool correct = true;
         for(u32 j = 0; j < worksize; j++)
         {
-            ODS("%d", step1_check_flag_vector_zero[j]);
+            if(step1_output_flag_vector_zero[j] != step1_check_flag_vector_zero[j])
+                correct = false;
+            if(step1_output_flag_vector_one[j] != step1_check_flag_vector_one[j])
+                correct = false;
+        }
+        ODS("%s \n", (correct == true) ? "CORRECT" : "INCORRECT");
+        
+        
+        
+        // Step 2: scan vectors
+        vkUpdateDescriptorSets(vk.device, step2_out->descwrite_count, step2_out->descwrites, 0, NULL);
+        
+        vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
+        vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, step2_out->pipe_layout, 0, 1, &step2_out->pipe_dset, 0, NULL);
+        vkCmdPushConstants(commandbuffer, step2_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, step2_in->pcr_size * sizeof(u32), step2_in->pcr_data);
+        vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, step2_out->pipe);
+        vkCmdDispatch(commandbuffer, blockcount, 1, 1);
+        vkEndCommandBuffer(commandbuffer);
+        
+        vkQueueSubmit(vk.queue, 1, &compute_si, fence);
+        vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
+        vkResetFences(vk.device, 1, &fence);
+        
+        // - read results
+        u32 *step2_output_scan_vector_zero = (u32 *)calloc(1, workdata_size);
+        memcpy(step2_output_scan_vector_zero, scan_vector_zero_mapptr, workdata_size);
+        
+        u32 *step2_output_scan_vector_one  = (u32 *)calloc(1, workdata_size);
+        memcpy(step2_output_scan_vector_one,  scan_vector_one_mapptr,  workdata_size);
+        
+        
+        
+        ODS("\n STEP 2 \n");
+        ODS("Calculated by GPU: \n");
+        ODS("- zero vector scan: \n|");
+        for(u32 j = 0; j < worksize; j++)
+        {
+            ODS("%2d|", step2_output_scan_vector_zero[j]);
         }
         ODS("\n");
+        ODS("- one vector scan: \n|");
         for(u32 j = 0; j < worksize; j++)
         {
-            ODS("%d", step1_check_flag_vector_one[j]);
+            ODS("%2d|", step2_output_scan_vector_one[j]);
+        }
+        ODS("\n");
+        
+        
+        u32 *step2_check_scan_vector_zero = (u32 *)calloc(1, workdata_size);
+        u32 *step2_check_scan_vector_one  = (u32 *)calloc(1, workdata_size);
+        
+        u32 scanner0 = 0;
+        for(u32 j = 0; j < worksize; j++)
+        {
+            step2_check_scan_vector_zero[j] = scanner0;
+            scanner0 += step1_check_flag_vector_zero[j];
+        }
+        u32 scanner1 = 0;
+        for(u32 j = 0; j < worksize; j++)
+        {
+            step2_check_scan_vector_one[j] = scanner1;
+            scanner1 += step1_check_flag_vector_one[j];
         }
         
-#if 0
-        // Step 2: block sums
+        ODS("Calculated by CPU: \n");
+        ODS("- zero vector scan: \n|");
+        for(u32 j = 0; j < worksize; j++)
+        {
+            ODS("%2d|", step2_check_scan_vector_zero[j]);
+        }
+        ODS("\n");
+        ODS("- one vector scan: \n|");
+        for(u32 j = 0; j < worksize; j++)
+        {
+            ODS("%2d|", step2_check_scan_vector_one[j]);
+        }
+        ODS("\n");
+        
+        ODS("Verification: ");
+        correct = true;
+        for(u32 j = 0; j < worksize; j++)
+        {
+            if(step2_output_scan_vector_zero[j] != step2_check_scan_vector_zero[j])
+                correct = false;
+            if(step2_output_scan_vector_one[j] != step2_check_scan_vector_one[j])
+                correct = false;
+        }
+        ODS("%s \n", (correct == true) ? "CORRECT" : "INCORRECT");
         
         
         
+        // Step 3: block sums
+        vkUpdateDescriptorSets(vk.device, step3_out->descwrite_count, step3_out->descwrites, 0, NULL);
         
-        vkBeginCommandBuffer();
-        vkCmdBindDescriptorSets();
-        vkCmdPushConstants();
-        vkCmdBindPipeline();
-        vkCmdDispatch();
-        vkEndCommandBuffer();
+        vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
+        vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, step3_out->pipe_layout, 0, 1, &step3_out->pipe_dset, 0, NULL);
+        vkCmdPushConstants(commandbuffer, step3_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, step3_in->pcr_size * sizeof(u32), step3_in->pcr_data);
+        vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, step3_out->pipe);
+        vkCmdDispatch(commandbuffer, blockcount, 1, 1);
+        vkEndCommandBuffer(commandbuffer);
         
-        vkQueueSubmit();
-        vkWaitForFences();
-        vkResetFences();
+        vkQueueSubmit(vk.queue, 1, &compute_si, fence);
+        vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
+        vkResetFences(vk.device, 1, &fence);
         
+        u32 *step3_output_sum_vector_zero = (u32 *)calloc(blockcount, sizeof(u32));
+        memcpy(step3_output_sum_vector_zero, flag_sum_zero_mapptr, blockcount * sizeof(u32));
         
-        
-        // Step 3: sum scans
-        
-        
-        
-        
-        vkBeginCommandBuffer();
-        vkCmdBindDescriptorSets();
-        vkCmdPushConstants();
-        vkCmdBindPipeline();
-        vkCmdDispatch();
-        vkEndCommandBuffer();
-        
-        vkQueueSubmit();
-        vkWaitForFences();
-        vkResetFences();
+        u32 *step3_output_sum_vector_one  = (u32 *)calloc(blockcount, sizeof(u32));
+        memcpy(step3_output_sum_vector_one,  flag_sum_one_mapptr,  blockcount * sizeof(u32));
         
         
         
-        // Step 4: vector scans
+        ODS("\n Step 3 \n");
+        ODS("GPU output: \n");
+        ODS("- zero sums: \n|");
+        for(u32 j = 0; j < blockcount; j++)
+        {
+            ODS("%2d|", step3_output_sum_vector_zero[j]);
+        }
+        ODS("\n");
+        ODS("- one sums: \n|");
+        for(u32 j = 0; j < blockcount; j++)
+        {
+            ODS("%2d|", step3_output_sum_vector_one[j]);
+        }
+        ODS("\n");
+        
+        
+        u32 *step3_check_sum_vector_zero = (u32 *)calloc(blockcount, sizeof(u32));
+        u32 *step3_check_sum_vector_one  = (u32 *)calloc(blockcount, sizeof(u32));
+        
+        ODS("CPU verification: \n");
+        for(u32 j = 0; j < worksize; j++)
+        {
+            u32 blockindex = j / blocksize;
+            step3_check_sum_vector_zero[blockindex] += step1_check_flag_vector_zero[j];
+            step3_check_sum_vector_one[blockindex]  += step1_check_flag_vector_one[j];
+        }
+        
+        ODS("Verification results: ");
+        correct = true;
+        for(u32 j = 0; j < blockcount; j++)
+        {
+            if(step3_output_sum_vector_zero[j] != step3_check_sum_vector_zero[j])
+                correct = false;
+            if(step3_output_sum_vector_one[j] != step3_check_sum_vector_one[j])
+                correct = false;
+        }
+        ODS("%s \n", (correct == true) ? "CORRECT" : "INCORRECT");
         
         
         
+        // Step 4: sum scans
+        vkUpdateDescriptorSets(vk.device, step4_out->descwrite_count, step4_out->descwrites, 0, NULL);
         
-        vkBeginCommandBuffer();
-        vkCmdBindDescriptorSets();
-        vkCmdPushConstants();
-        vkCmdBindPipeline();
-        vkCmdDispatch();
-        vkEndCommandBuffer();
+        vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
+        vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, step4_out->pipe_layout, 0, 1, &step4_out->pipe_dset, 0, NULL);
+        vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, step4_out->pipe);
+        vkCmdDispatch(commandbuffer, blockcount, 1, 1);
+        vkEndCommandBuffer(commandbuffer);
         
-        vkQueueSubmit();
-        vkWaitForFences();
-        vkResetFences();
-        
-        
-        
-        // Step 5: modify scans
+        vkQueueSubmit(vk.queue, 1, &compute_si, fence);
+        vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
+        vkResetFences(vk.device, 1, &fence);
         
         
+        u32 *step4_output_sum_scan = (u32 *)calloc(2 * blockcount, sizeof(u32));
+        memcpy(step4_output_sum_scan, sum_scan_mapptr, 2 * blockcount * sizeof(u32));
+        
+        ODS("\n STEP 4 \n");
+        ODS("GPU output: \n");
+        ODS("- sum scan: \n|");
+        for(u32 j = 0; j < (2 * blockcount); j++)
+        {
+            ODS("%2d|", step4_output_sum_scan[j]);
+        }
+        ODS("\n");
+        
+        ODS("CPU check: \n");
+        u32 *step4_check_sum_scan = (u32 *)calloc(2 * blockcount, sizeof(u32));
+        u32 sum = 0;
+        for(u32 j = 0; j < blockcount; j++)
+        {
+            step4_check_sum_scan[j] = sum;
+            sum += step3_check_sum_vector_zero[j];
+        }
+        for(u32 j = 0; j < blockcount; j++)
+        {
+            step4_check_sum_scan[blockcount + j] = sum;
+            sum += step3_check_sum_vector_one[j];
+        }
+        
+        ODS("- sum scan: \n|");
+        for(u32 j = 0; j < (2 * blockcount); j++)
+        {
+            ODS("%2d|", step4_output_sum_scan[j]);
+        }
+        ODS("\n");
+        
+        ODS("Verification: ");
+        correct = true;
+        for(u32 j = 0; j < (2 * blockcount); j++)
+        {
+            if(step4_output_sum_scan[j] != step4_check_sum_scan[j])
+                correct = false;
+        }
+        ODS("%s \n", (correct = true) ? "PASSED" : "FAILED" );
         
         
-        vkBeginCommandBuffer();
-        vkCmdBindDescriptorSets();
-        vkCmdPushConstants();
-        vkCmdBindPipeline();
-        vkCmdDispatch();
-        vkEndCommandBuffer();
         
-        vkQueueSubmit();
-        vkWaitForFences();
-        vkResetFences();
+        // Step 5: modify flag scans with sum scans
+        vkUpdateDescriptorSets(vk.device, step5_out->descwrite_count, step5_out->descwrites, 0, NULL);
+        
+        vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
+        vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, step5_out->pipe_layout, 0, 1, &step5_out->pipe_dset, 0, NULL);
+        vkCmdPushConstants(commandbuffer, step5_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, step5_in->pcr_size * sizeof(u32), step5_in->pcr_data);
+        vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, step5_out->pipe);
+        vkCmdDispatch(commandbuffer, blockcount, 1, 1);
+        vkEndCommandBuffer(commandbuffer);
+        
+        vkQueueSubmit(vk.queue, 1, &compute_si, fence);
+        vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
+        vkResetFences(vk.device, 1, &fence);
+        
+        
+        
+        u32 *step5_output_scan_vector_zero = (u32 *)calloc(1, workdata_size);
+        memcpy(step5_output_scan_vector_zero, scan_vector_zero_mapptr, workdata_size);
+        
+        u32 *step5_output_scan_vector_one  = (u32 *)calloc(1, workdata_size);
+        memcpy(step5_output_scan_vector_one,  scan_vector_one_mapptr,  workdata_size);
+        
+        
+        ODS("\n STEP 5 \n");
+        ODS("GPU output: \n");
+        ODS("- modified flag scans: \n|");
+        for(u32 j = 0; j < worksize; j++)
+        {
+            ODS("%2d|", step5_output_scan_vector_zero[j]);
+        }
+        ODS("\n|");
+        for(u32 j = 0; j < worksize; j++)
+        {
+            ODS("%2d|", step5_output_scan_vector_one[j]);
+        }
+        ODS("\n");
         
         
         
         // Step 6: redistribute values
+        vkUpdateDescriptorSets(vk.device, step6_out->descwrite_count, step6_out->descwrites, 0, NULL);
+        
+        vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
+        vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, step6_out->pipe_layout, 0, 1, &step6_out->pipe_dset, 0, NULL);
+        vkCmdPushConstants(commandbuffer, step6_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, step6_in->pcr_size * sizeof(u32), step6_in->pcr_data);
+        vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, step6_out->pipe);
+        vkCmdDispatch(commandbuffer, blockcount, 1, 1);
+        vkEndCommandBuffer(commandbuffer);
+        
+        vkQueueSubmit(vk.queue, 1, &compute_si, fence);
+        vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
+        vkResetFences(vk.device, 1, &fence);
         
         
         
+        u32 *step6_output_sorted_mortons = (u32 *)calloc(worksize, sizeof(u32));
+        memcpy(step6_output_sorted_mortons, sorted_mortons_mapptr, worksize * sizeof(u32));
         
-        vkBeginCommandBuffer();
-        vkCmdBindDescriptorSets();
-        vkCmdPushConstants();
-        vkCmdBindPipeline();
-        vkCmdDispatch();
-        vkEndCommandBuffer();
+        ODS("\n STEP 6 \n");
+        ODS("GPU output: \n");
+        ODS("- sorted morton values: \n");
+        for(u32 j = 0; j < worksize; j++)
+        {
+            ODS("%s \n", DecToBin(step6_output_sorted_mortons[j], 32));
+        }
+        ODS("\n");
         
-        vkQueueSubmit();
-        vkWaitForFences();
-        vkResetFences();
-#endif
+        free(step6_output_sorted_mortons);
+        
+        
+        // Step 7: copy sorted mortons back into inputs
+        vkUpdateDescriptorSets(vk.device, step7_out->descwrite_count, step7_out->descwrites, 0, NULL);
+        
+        vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
+        vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, step7_out->pipe_layout, 0, 1, &step7_out->pipe_dset, 0, NULL);
+        vkCmdPushConstants(commandbuffer, step7_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, step7_in->pcr_size * sizeof(u32), step7_in->pcr_data);
+        vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, step7_out->pipe);
+        vkCmdDispatch(commandbuffer, blockcount, 1, 1);
+        vkEndCommandBuffer(commandbuffer);
+        
+        vkQueueSubmit(vk.queue, 1, &compute_si, fence);
+        vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
+        vkResetFences(vk.device, 1, &fence);
     }
+    
+    // final check
+    u32 *sorted_mortons = (u32 *)calloc(worksize, sizeof(u32));
+    memcpy(sorted_mortons, mortondata_mapptr, worksize * sizeof(u32));
+    
+    ODS("Sorted mortons: \n");
+    for(u32 i = 0; i < worksize; i++)
+    {
+        ODS("%s \n", DecToBin(sorted_mortons[i], 32));
+    }
+    ODS("\n");
+    
+    bool correct = true;
+    for(u32 i = 0; i < worksize-1; i++)
+    {
+        if(sorted_mortons[i] > sorted_mortons[i+1])
+            correct = false;
+    }
+    ODS("FINAL VALIDATION: %s \n", (correct == true) ? "PASSED" : "FAILED");
+    
+    vkUnmapMemory(vk.device, mortondata_memory);
+    vkUnmapMemory(vk.device, flag_vector_zero_memory);
+    vkUnmapMemory(vk.device, flag_vector_one_memory);
+    vkUnmapMemory(vk.device, scan_vector_zero_memory);
+    vkUnmapMemory(vk.device, scan_vector_one_memory);
+    vkUnmapMemory(vk.device, flag_sum_zero_memory);
+    vkUnmapMemory(vk.device, flag_sum_one_memory);
+    vkUnmapMemory(vk.device, sum_scan_memory);
+    vkUnmapMemory(vk.device, sorted_mortons_memory);
     
     exit(0);
     

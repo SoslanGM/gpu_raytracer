@@ -8,11 +8,15 @@ pushd ..\build
 glslangValidator -V ..\code\minmax.comp -o ..\code\minmax_comp.spv
 ::glslangValidator -V ..\code\radix.comp -o ..\code\radix_comp.spv
 glslangValidator -V ..\code\centroidmorton.comp -o ..\code\centroidmorton.spv
+
 glslangValidator -V ..\code\step1_shader.comp -o ..\code\step1_shader.spv
-::glslangValidator -V ..\code\step2_shader.comp -o ..\code\step2_shader.spv
-::glslangValidator -V ..\code\step3_shader.comp -o ..\code\step3_shader.spv
-::glslangValidator -V ..\code\step4_shader.comp -o ..\code\step4_shader.spv
-::glslangValidator -V ..\code\step5_shader.comp -o ..\code\step5_shader.spv
+glslangValidator -V ..\code\step2_shader.comp -o ..\code\step2_shader.spv
+glslangValidator -V ..\code\step3_shader.comp -o ..\code\step3_shader.spv
+glslangValidator -V ..\code\step4_shader.comp -o ..\code\step4_shader.spv
+glslangValidator -V ..\code\step5_shader.comp -o ..\code\step5_shader.spv
+glslangValidator -V ..\code\step6_shader.comp -o ..\code\step6_shader.spv
+glslangValidator -V ..\code\step7_shader.comp -o ..\code\step7_shader.spv
+
 ::glslangValidator -V ..\code\shader.vert -o ..\code\shader_vert.spv
 glslangValidator -V ..\code\shader.frag -o ..\code\shader_frag.spv
 
