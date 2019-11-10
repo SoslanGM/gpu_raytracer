@@ -1,0 +1,35 @@
+#version 460
+
+layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+layout (push_constant) uniform range
+{
+    uint thread_count;
+};
+
+layout(std430, set = 0, binding = 0) coherent buffer flagzero { uint flag_zero[]; };
+layout(std430, set = 0, binding = 1) coherent buffer flagone  { uint flag_one[];  };
+layout(std430, set = 0, binding = 2) coherent buffer scanzero { uint sum_zero[];  };
+layout(std430, set = 0, binding = 3) coherent buffer scanone  { uint sum_one[];   };
+
+void main()
+{
+    uint global_index = gl_GlobalInvocationID.x;
+    if(global_index > thread_count)
+        return;
+    uint local_index = gl_LocalInvocationID.x;
+    
+    if(local_index == 0)
+    {
+        uint sum0 = 0;
+        uint sum1 = 0;
+        uint start_index = gl_WorkGroupID.x * gl_WorkGroupSize.x;
+        uint end_index   = start_index      + gl_WorkGroupSize.x;
+        for(uint i = start_index; i < end_index; i++)
+        {
+            sum0 += flag_zero[i];
+            sum1 += flag_one[i];
+        }
+        sum_zero[gl_WorkGroupID.x] = sum0;
+        sum_one[gl_WorkGroupID.x]  = sum1;
+    }
+}

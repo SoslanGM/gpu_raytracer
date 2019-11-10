@@ -1,0 +1,28 @@
+#version 460
+
+layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 0, binding = 0) coherent buffer sumzero { uint sum_zero[]; };
+layout(std430, set = 0, binding = 1) coherent buffer sumone  { uint sum_one[];  };
+layout(std430, set = 0, binding = 2) coherent buffer sumscan { uint sum_scan[]; };
+
+void main()
+{
+    uint local_index = gl_LocalInvocationID.x;
+    if(local_index > 0)
+        return;
+    
+    uint sum = 0;
+    // zeroes
+    for(uint i = 0; i < gl_NumWorkGroups.x; i++)
+    {
+        sum_scan[i] = sum;
+        sum += sum_zero[i];
+    }
+    // ones
+    for(uint i = 0; i < gl_NumWorkGroups.x; i++)
+    {
+        sum_scan[gl_NumWorkGroups.x+i] = sum;
+        sum += sum_one[i];
+    }
+}

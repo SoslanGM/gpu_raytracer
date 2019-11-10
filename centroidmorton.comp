@@ -1,0 +1,98 @@
+#version 450 core
+
+layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+layout (push_constant) uniform model_ranges
+{
+    uint thread_count;
+    float x_start, x_range;
+    float y_start, y_range;
+    float z_start, z_range;
+};
+
+struct vec3_padded
+{
+    float x, y, z;
+    uint pad;
+};
+struct AABB
+{
+    vec3_padded lower;
+    vec3_padded upper;
+};
+struct out_str
+{
+    //float cen_x, cen_y, cen_z;
+    vec3 cen;
+    uint morton_code;
+    AABB bounding_box;
+};
+
+layout (std430, binding = 0) buffer in_indexes  { uint indexes[];  };  // in
+layout (std430, binding = 1) buffer in_vertexes { float vertexes[]; };  // in
+layout (std430, binding = 2) buffer out_aos     { out_str structs[]; };  // out
+
+
+uint Part1By2(uint x)
+{
+    x &= 0x000003ff;                  // x = ---- ---- ---- ---- ---- --98 7654 3210
+    x = (x ^ (x << 16)) & 0xff0000ff; // x = ---- --98 ---- ---- ---- ---- 7654 3210
+    x = (x ^ (x <<  8)) & 0x0300f00f; // x = ---- --98 ---- ---- 7654 ---- ---- 3210
+    x = (x ^ (x <<  4)) & 0x030c30c3; // x = ---- --98 ---- 76-- --54 ---- 32-- --10
+    x = (x ^ (x <<  2)) & 0x09249249; // x = ---- 9--8 --7- -6-- 5--4 --3- -2-- 1--0
+    return x;
+}
+
+uint EncodeMorton3(uint x, uint y, uint z)
+{
+    return (Part1By2(z) << 2) + (Part1By2(y) << 1) + Part1By2(x);
+}
+
+void main()
+{
+    uint global_index = gl_GlobalInvocationID.x;
+    if(global_index > thread_count)
+        return;
+    
+    // read a triplet of indexes
+    uint i0 = indexes[3 * global_index];
+    uint i1 = indexes[3 * global_index + 1];
+    uint i2 = indexes[3 * global_index + 2];
+    
+    float v0_x = vertexes[8*i0];
+    float v0_y = vertexes[8*i0+1];
+    float v0_z = vertexes[8*i0+2];
+    
+    float v1_x = vertexes[8*i1];
+    float v1_y = vertexes[8*i1+1];
+    float v1_z = vertexes[8*i1+2];
+    
+    float v2_x = vertexes[8*i2];
+    float v2_y = vertexes[8*i2+1];
+    float v2_z = vertexes[8*i2+2];
+    
+    float cen_x = (v0_x + v1_x + v2_x) / 3.0;
+    float cen_y = (v0_y + v1_y + v2_y) / 3.0;
+    float cen_z = (v0_z + v1_z + v2_z) / 3.0;
+    
+    // calculate AABB
+    float x_min = min(min(v0_x, v1_x), v2_x);
+    float y_min = min(min(v0_y, v1_y), v2_y);
+    float z_min = min(min(v0_z, v1_z), v2_z);
+    
+    float x_max = max(max(v0_x, v1_x), v2_x);
+    float y_max = max(max(v0_y, v1_y), v2_y);
+    float z_max = max(max(v0_z, v1_z), v2_z);
+    
+    // calculate morton code
+    float morton_range = 1023.0;
+    uint morton_x = uint(floor( (cen_x+abs(x_start)) * (morton_range/x_range) ));
+    uint morton_y = uint(floor( (cen_y+abs(y_start)) * (morton_range/y_range) ));
+    uint morton_z = uint(floor( (cen_z+abs(z_start)) * (morton_range/z_range) ));
+    uint mcode = EncodeMorton3(morton_x, morton_y, morton_z);
+    
+    // write all that stuff.
+    structs[global_index].cen                = vec3(cen_x, cen_y, cen_z);
+    structs[global_index].morton_code        = mcode;
+    structs[global_index].bounding_box.lower = vec3_padded(x_min, y_min, z_min, 0);
+    structs[global_index].bounding_box.upper = vec3_padded(x_max, y_max, z_max, 0);
+}

@@ -1,0 +1,25 @@
+#version 460
+
+layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+layout (push_constant) uniform range
+{
+    uint thread_count;
+};
+
+struct entry
+{
+    uint index;
+    uint code;
+};
+layout(std430, set = 0, binding = 0) coherent buffer sortedmortons_ { entry sorted_mortons[]; };
+layout(std430, set = 0, binding = 1) coherent buffer mortondata_    { entry morton_data[];    };
+
+void main()
+{
+    uint global_index = gl_GlobalInvocationID.x;
+    if(global_index > thread_count)
+        return;
+    
+    morton_data[global_index].code  = sorted_mortons[global_index].code;
+    morton_data[global_index].index = sorted_mortons[global_index].index;
+}

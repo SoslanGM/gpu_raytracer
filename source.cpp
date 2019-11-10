@@ -2278,8 +2278,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     // --- SPLIT KERNEL MORTON SORT ---
     // --- variables
     const u32 blocksize = 32;
-    //u32 worksize = model_tricount;
-    u32 worksize = 32;
+    u32 worksize = model_tricount;
+    //u32 worksize = 64;
     u32 blockcount = (u32)ceil((r32)worksize / (r32)blocksize);  // I see some padding in the future
     
     // for each of the digit places...
@@ -2320,18 +2320,33 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // step 1
-    u32 *morton_data = (u32 *)malloc(worksize * sizeof(u32));
+    typedef struct 
+    {
+        u32 index;
+        u32 code;
+    } primitive_entry;
+    
+    //u32 *morton_data = (u32 *)malloc(worksize * sizeof(u32));
+    primitive_entry *morton_data = (primitive_entry *)malloc(worksize * sizeof(primitive_entry));
     for(u32 i = 0; i < worksize; i++)
     {
-        morton_data[i] = step2_data[i].morton_code;
+        morton_data[i].index = i;
+        morton_data[i].code  = step2_data[i].morton_code;
+    }
+    
+    for(u32 i = 0; i < worksize; i++)
+    {
+        ODS("%5d %s \n", i, DecToBin(morton_data[i].code, 32));
     }
     
     // - prepare vulkan data
     // TO DO: replace CPU-side buffer with a staging buffer and a GPU-side buffer
-    u32 workdata_size = worksize * sizeof(u32);
+    u32 workdata_size  = worksize * sizeof(u32);
+    u32 entrydata_size = worksize * sizeof(primitive_entry); 
+    // I really dislike this ^ convention...
     
     VkDeviceMemory mortondata_memory;
-    VkBuffer mortondata_buffer = CreateBuffer(workdata_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+    VkBuffer mortondata_buffer = CreateBuffer(entrydata_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                               VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
                                               vk.device, gpu_memprops,
                                               &mortondata_memory);
@@ -2347,8 +2362,8 @@ int CALLBACK WinMain(HINSTANCE instance,
                                                    &flag_vector_one_memory);
     
     void *mortondata_mapptr;
-    vkMapMemory(vk.device, mortondata_memory, 0, workdata_size, 0, &mortondata_mapptr);
-    memcpy(mortondata_mapptr, morton_data, workdata_size);
+    vkMapMemory(vk.device, mortondata_memory, 0, VK_WHOLE_SIZE, 0, &mortondata_mapptr);
+    memcpy(mortondata_mapptr, morton_data, entrydata_size);
     
     void *flag_vector_zero_mapptr;
     vkMapMemory(vk.device, flag_vector_zero_memory, 0, VK_WHOLE_SIZE, 0, &flag_vector_zero_mapptr);
@@ -2540,7 +2555,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     step6_in->resource_count = 6;
     
     VkDeviceMemory sorted_mortons_memory;
-    VkBuffer sorted_mortons_buffer = CreateBuffer(workdata_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+    VkBuffer sorted_mortons_buffer = CreateBuffer(entrydata_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
                                                   vk.device, gpu_memprops,
                                                   &sorted_mortons_memory);
@@ -2600,10 +2615,12 @@ int CALLBACK WinMain(HINSTANCE instance,
     out_struct *step7_out = CreateComputePipeline(step7_in);
     
     
+#define PRINT 0
+    u32 printsize = 32;
     
     for(u32 i = 0; i < process_digitcount; i++)
     {
-        ODS("> PROCESSING DIGIT %d \n", i);
+        //ODS("> PROCESSING DIGIT %d \n", i);
         
         step1_in->pcr_data[1] = i;
         vkUpdateDescriptorSets(vk.device, step1_out->descwrite_count, step1_out->descwrites, 0, NULL);
@@ -2632,35 +2649,36 @@ int CALLBACK WinMain(HINSTANCE instance,
         u32 *step1_check_flag_vector_one  = (u32 *)malloc(workdata_size);
         for(u32 j = 0; j < worksize; j++)
         {
-            u32 bit = ((morton_data[j] & (1 << i)) >> i) & 1;
+            u32 bit = ((morton_data[j].code & (1 << i)) >> i) & 1;
             step1_check_flag_vector_zero[j] = (bit == 0) ? 1 : 0;
             step1_check_flag_vector_one[j]  = bit;
         }
         
+#if PRINT
         ODS("\n STEP 1 \n");
         ODS("Data: \n");
-        for(u32 j = 0; j < worksize; j++)
+        for(u32 j = 0; j < printsize; j++)
         {
             ODS("%s \n", DecToBin(morton_data[j], 32));
         }
         ODS("Read by GPU: \n|");
-        for(u32 j = 0; j < worksize; j++)
+        for(u32 j = 0; j < printsize; j++)
         {
             ODS("%2d|", step1_output_flag_vector_zero[j]);
         }
         ODS("\n|");
-        for(u32 j = 0; j < worksize; j++)
+        for(u32 j = 0; j < printsize; j++)
         {
             ODS("%2d|", step1_output_flag_vector_one[j]);
         }
         ODS("\n");
         ODS("Read by CPU: \n|");
-        for(u32 j = 0; j < worksize; j++)
+        for(u32 j = 0; j < printsize; j++)
         {
             ODS("%2d|", step1_check_flag_vector_zero[j]);
         }
         ODS("\n|");
-        for(u32 j = 0; j < worksize; j++)
+        for(u32 j = 0; j < printsize; j++)
         {
             ODS("%2d|", step1_check_flag_vector_one[j]);
         }
@@ -2676,6 +2694,7 @@ int CALLBACK WinMain(HINSTANCE instance,
                 correct = false;
         }
         ODS("%s \n", (correct == true) ? "CORRECT" : "INCORRECT");
+#endif
         
         
         
@@ -2701,21 +2720,22 @@ int CALLBACK WinMain(HINSTANCE instance,
         memcpy(step2_output_scan_vector_one,  scan_vector_one_mapptr,  workdata_size);
         
         
-        
+#if PRINT
         ODS("\n STEP 2 \n");
         ODS("Calculated by GPU: \n");
         ODS("- zero vector scan: \n|");
-        for(u32 j = 0; j < worksize; j++)
+        for(u32 j = 0; j < printsize; j++)
         {
             ODS("%2d|", step2_output_scan_vector_zero[j]);
         }
         ODS("\n");
         ODS("- one vector scan: \n|");
-        for(u32 j = 0; j < worksize; j++)
+        for(u32 j = 0; j < printsize; j++)
         {
             ODS("%2d|", step2_output_scan_vector_one[j]);
         }
         ODS("\n");
+#endif
         
         
         u32 *step2_check_scan_vector_zero = (u32 *)calloc(1, workdata_size);
@@ -2734,15 +2754,16 @@ int CALLBACK WinMain(HINSTANCE instance,
             scanner1 += step1_check_flag_vector_one[j];
         }
         
+#if PRINT
         ODS("Calculated by CPU: \n");
         ODS("- zero vector scan: \n|");
-        for(u32 j = 0; j < worksize; j++)
+        for(u32 j = 0; j < printsize; j++)
         {
             ODS("%2d|", step2_check_scan_vector_zero[j]);
         }
         ODS("\n");
         ODS("- one vector scan: \n|");
-        for(u32 j = 0; j < worksize; j++)
+        for(u32 j = 0; j < printsize; j++)
         {
             ODS("%2d|", step2_check_scan_vector_one[j]);
         }
@@ -2758,6 +2779,7 @@ int CALLBACK WinMain(HINSTANCE instance,
                 correct = false;
         }
         ODS("%s \n", (correct == true) ? "CORRECT" : "INCORRECT");
+#endif
         
         
         
@@ -2782,7 +2804,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         memcpy(step3_output_sum_vector_one,  flag_sum_one_mapptr,  blockcount * sizeof(u32));
         
         
-        
+#if PRINT
         ODS("\n Step 3 \n");
         ODS("GPU output: \n");
         ODS("- zero sums: \n|");
@@ -2797,11 +2819,13 @@ int CALLBACK WinMain(HINSTANCE instance,
             ODS("%2d|", step3_output_sum_vector_one[j]);
         }
         ODS("\n");
+#endif
         
         
         u32 *step3_check_sum_vector_zero = (u32 *)calloc(blockcount, sizeof(u32));
         u32 *step3_check_sum_vector_one  = (u32 *)calloc(blockcount, sizeof(u32));
         
+#if PRINT
         ODS("CPU verification: \n");
         for(u32 j = 0; j < worksize; j++)
         {
@@ -2820,6 +2844,7 @@ int CALLBACK WinMain(HINSTANCE instance,
                 correct = false;
         }
         ODS("%s \n", (correct == true) ? "CORRECT" : "INCORRECT");
+#endif
         
         
         
@@ -2840,6 +2865,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         u32 *step4_output_sum_scan = (u32 *)calloc(2 * blockcount, sizeof(u32));
         memcpy(step4_output_sum_scan, sum_scan_mapptr, 2 * blockcount * sizeof(u32));
         
+#if PRINT
         ODS("\n STEP 4 \n");
         ODS("GPU output: \n");
         ODS("- sum scan: \n|");
@@ -2850,6 +2876,8 @@ int CALLBACK WinMain(HINSTANCE instance,
         ODS("\n");
         
         ODS("CPU check: \n");
+#endif
+        
         u32 *step4_check_sum_scan = (u32 *)calloc(2 * blockcount, sizeof(u32));
         u32 sum = 0;
         for(u32 j = 0; j < blockcount; j++)
@@ -2863,6 +2891,7 @@ int CALLBACK WinMain(HINSTANCE instance,
             sum += step3_check_sum_vector_one[j];
         }
         
+#if PRINT
         ODS("- sum scan: \n|");
         for(u32 j = 0; j < (2 * blockcount); j++)
         {
@@ -2878,6 +2907,7 @@ int CALLBACK WinMain(HINSTANCE instance,
                 correct = false;
         }
         ODS("%s \n", (correct = true) ? "PASSED" : "FAILED" );
+#endif
         
         
         
@@ -2904,19 +2934,21 @@ int CALLBACK WinMain(HINSTANCE instance,
         memcpy(step5_output_scan_vector_one,  scan_vector_one_mapptr,  workdata_size);
         
         
+#if PRINT
         ODS("\n STEP 5 \n");
         ODS("GPU output: \n");
         ODS("- modified flag scans: \n|");
-        for(u32 j = 0; j < worksize; j++)
+        for(u32 j = 0; j < printsize; j++)
         {
             ODS("%2d|", step5_output_scan_vector_zero[j]);
         }
         ODS("\n|");
-        for(u32 j = 0; j < worksize; j++)
+        for(u32 j = 0; j < printsize; j++)
         {
             ODS("%2d|", step5_output_scan_vector_one[j]);
         }
         ODS("\n");
+#endif
         
         
         
@@ -2935,20 +2967,22 @@ int CALLBACK WinMain(HINSTANCE instance,
         vkResetFences(vk.device, 1, &fence);
         
         
-        
+#if PRINT
+        ODS("\n STEP 6 \n");
         u32 *step6_output_sorted_mortons = (u32 *)calloc(worksize, sizeof(u32));
         memcpy(step6_output_sorted_mortons, sorted_mortons_mapptr, worksize * sizeof(u32));
         
-        ODS("\n STEP 6 \n");
         ODS("GPU output: \n");
         ODS("- sorted morton values: \n");
-        for(u32 j = 0; j < worksize; j++)
+        for(u32 j = 0; j < printsize; j++)
         {
             ODS("%s \n", DecToBin(step6_output_sorted_mortons[j], 32));
         }
         ODS("\n");
         
         free(step6_output_sorted_mortons);
+#endif
+        
         
         
         // Step 7: copy sorted mortons back into inputs
@@ -2967,20 +3001,23 @@ int CALLBACK WinMain(HINSTANCE instance,
     }
     
     // final check
-    u32 *sorted_mortons = (u32 *)calloc(worksize, sizeof(u32));
-    memcpy(sorted_mortons, mortondata_mapptr, worksize * sizeof(u32));
+    primitive_entry *sorted_mortons = (primitive_entry *)calloc(worksize, sizeof(primitive_entry));
+    memcpy(sorted_mortons, mortondata_mapptr, worksize * sizeof(primitive_entry));
     
+#if 1
     ODS("Sorted mortons: \n");
     for(u32 i = 0; i < worksize; i++)
     {
-        ODS("%s \n", DecToBin(sorted_mortons[i], 32));
+        ODS("%5d %s \n", sorted_mortons[i].index, DecToBin(sorted_mortons[i].code, 32));
     }
     ODS("\n");
+#endif
+    
     
     bool correct = true;
     for(u32 i = 0; i < worksize-1; i++)
     {
-        if(sorted_mortons[i] > sorted_mortons[i+1])
+        if(sorted_mortons[i].code > sorted_mortons[i+1].code)
             correct = false;
     }
     ODS("FINAL VALIDATION: %s \n", (correct == true) ? "PASSED" : "FAILED");
@@ -2994,6 +3031,11 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkUnmapMemory(vk.device, flag_sum_one_memory);
     vkUnmapMemory(vk.device, sum_scan_memory);
     vkUnmapMemory(vk.device, sorted_mortons_memory);
+    
+    
+    
+    // --- build a tree over the Morton codes
+    
     
     exit(0);
     
