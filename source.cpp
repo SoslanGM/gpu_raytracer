@@ -3049,7 +3049,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // --- build a tree over the Morton codes
-    worksize = 32;
+    //worksize = 32;
     
     primitive_entry *sorted_keys = (primitive_entry *)calloc(worksize, sizeof(primitive_entry));
     memcpy(sorted_keys, sorted_mortons_mapptr, worksize*sizeof(primitive_entry));
@@ -3065,6 +3065,9 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     typedef struct
     {
+        s32 d;
+        s32 delta_min;
+        s32 delta_node;
         s32 parent;
         s32 left;
         s32 right;
@@ -3081,6 +3084,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     tree_entry *tree_data = (tree_entry *)calloc(2*worksize-1, sizeof(tree_entry));
     
+#if 1
     tree_data[0].parent = -1;  // the root has no parent
     
     // write -1 to left and right of leaves, as they have no children
@@ -3089,6 +3093,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         tree_data[i].left  = -1;
         tree_data[i].right = -1;
     }
+#endif
     
     void *tree_mapptr;
     vkMapMemory(vk.device, tree_memory, 0, VK_WHOLE_SIZE, 0, &tree_mapptr);
@@ -3159,6 +3164,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         s32 d = ((delta(sorted_values, n, i, i+1) - delta(sorted_values, n, i, i-1)) > 0) ? 1: -1;
         
         s32 delta_min = delta(sorted_values, n, i, i-d);
+        tree_check[i].delta_min = delta_min;
         
         s32 lmax = 2;
         while(delta(sorted_values, n, i, i+lmax*d) > delta_min)
@@ -3182,6 +3188,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         if(i != j)
         {
             s32 delta_node = delta(sorted_values, n, i, j);
+            tree_check[i].delta_node = delta_node;
             
             s32 s = 0;
             r32 m = 2.0f;
@@ -3211,6 +3218,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         else
             tree_check[i].right = gamma+1;
         
+        tree_check[i].d = d;
         tree_check[tree_check[i].left].parent  = i;
         tree_check[tree_check[i].right].parent = i;
     }
@@ -3218,7 +3226,10 @@ int CALLBACK WinMain(HINSTANCE instance,
     correct = true;
     for(u32 i = 0; i < (2*worksize-1); i++)
     {
-        if((tree_data[i].parent     != tree_check[i].parent)     ||
+        if((tree_data[i].d          != tree_check[i].d)          ||
+           (tree_data[i].delta_min  != tree_check[i].delta_min)  ||
+           (tree_data[i].delta_node != tree_check[i].delta_node) ||
+           (tree_data[i].parent     != tree_check[i].parent)     ||
            (tree_data[i].left       != tree_check[i].left)       ||
            (tree_data[i].right      != tree_check[i].right))
         {
