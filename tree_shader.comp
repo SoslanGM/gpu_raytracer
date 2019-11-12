@@ -45,7 +45,7 @@ void main()
 {
     int n = int(thread_count);
     int i = int(gl_GlobalInvocationID.x);
-    if(i > (n-1))
+    if(i > (n-2))
         return;
     
     // see if we're at the start or end of range: d = 1 or d = -1

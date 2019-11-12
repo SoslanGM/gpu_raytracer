@@ -3159,7 +3159,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         tree_check[i].right = -1;
     }
     
-    for(u32 i = 0; i < n; i++)
+    for(u32 i = 0; i < n-1; i++)
     {
         s32 d = ((delta(sorted_values, n, i, i+1) - delta(sorted_values, n, i, i-1)) > 0) ? 1: -1;
         
