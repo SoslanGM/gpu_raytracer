@@ -1,0 +1,105 @@
+#version 460
+
+layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+layout (push_constant) uniform range
+{
+    uint thread_count;
+};
+
+struct entry
+{
+    uint index;
+    uint code;
+};
+struct tree_node
+{
+    int parent;
+    int left;
+    int right;
+};
+layout (std430, set = 0, binding = 0) coherent buffer morton { entry     sorted_keys[]; };
+layout (std430, set = 0, binding = 1) coherent buffer tree   { tree_node tree_data[];   };
+
+
+// return length of common prefix of two keys
+// Delta only accepts MORTON CODES! So I need to fetch them inside this function.
+// - this is working WRONGLY
+int delta(int c0, int c1)
+{
+    if((c1 < 0) || (c1 > (thread_count-1)))
+        return -1;
+    
+    // XOR two keys, return the leading zeroes count
+    if(sorted_keys[c0].code == sorted_keys[c1].code)
+        return 32;
+    else
+        return 32-findMSB(sorted_keys[c0].code^sorted_keys[c1].code)-1;
+}
+
+// remember to check for index if the keys are the equal
+void main()
+{
+    int n = int(thread_count);
+    int i = int(gl_GlobalInvocationID.x);
+    if(i > (n-1))
+        return;
+    
+    // see if we're at the start or end of range: d = 1 or d = -1
+    // checking ki-1, ki, ki+1 to see where the range is directed
+    // which one's bigger?
+    int d = sign(delta(i, i+1) - delta(i, i-1));
+    
+    int delta_min = delta(i, i-d);
+    
+    // find lmax to determine the end: (i,j) j = i+ld
+    int lmax = 2;
+    while(delta(i, i+lmax*d) > delta_min)
+        lmax *= 2;
+    
+    // find biggest l(0, lmax-1), with binary search, where delta(i,i+l*d) > delta_min
+    // - for now, a humble fucking decrement.
+    int l = 0;
+    for(int t = lmax; t >= 1; t--)
+    {
+        if(delta(i, i+(l+t)*d) > delta_min)
+            l += t;
+    }
+    int j = i + l*d;
+    
+    int gamma = 0;
+    // more probable
+    if(i != j)
+    {
+        int delta_node = delta(i, j);  // is it here that we're checking for if the keys are one and the same?
+        
+        int s = 0;
+        // find biggest s of split, where delta(i,i+s*d) > delta_node
+        // - ditto.
+        for(int t = l; t >= 1; t--)
+        {
+            if(delta(i, i+(s+t)*d) > delta_node)
+                s += t;
+        }
+        gamma = i + s*d + min(d, 0);  // correction is indeed required, I checked :B
+    }
+    // less probable
+    else
+        gamma = min(i, j);
+    
+    // the way I store stuff, first n-1 elements are nodes, last n are leafs
+    // - which means I should make a bigger block for the output array and prewrite its last n elements
+    // If a split position equals either the beginning or the end of the range, it's a leaf.
+    if(gamma == min(i, j))
+        tree_data[i].left = gamma+n;  // left is a leaf
+    else
+        tree_data[i].left = gamma;    // left is a node
+    
+    if((gamma+1) == max(i, j))
+        tree_data[i].right = gamma+1+n;
+    else
+        tree_data[i].right = gamma+1;
+    
+    tree_data[tree_data[i].left].parent  = i;
+    tree_data[tree_data[i].right].parent = i;
+}

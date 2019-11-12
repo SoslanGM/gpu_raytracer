@@ -16,6 +16,7 @@ glslangValidator -V ..\code\step4_shader.comp -o ..\code\step4_shader.spv
 glslangValidator -V ..\code\step5_shader.comp -o ..\code\step5_shader.spv
 glslangValidator -V ..\code\step6_shader.comp -o ..\code\step6_shader.spv
 glslangValidator -V ..\code\step7_shader.comp -o ..\code\step7_shader.spv
+glslangValidator -V ..\code\tree_shader.comp -o ..\code\tree_shader.spv
 
 ::glslangValidator -V ..\code\shader.vert -o ..\code\shader_vert.spv
 glslangValidator -V ..\code\shader.frag -o ..\code\shader_frag.spv

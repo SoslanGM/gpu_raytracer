@@ -1092,6 +1092,18 @@ out_struct *CreateComputePipeline(in_struct *in)
 }
 
 
+
+s32 delta(u32 *keys, u32 n, u32 i, u32 j)
+{
+    if((j < 0) || (j > (n-1)))
+        return -1;
+    if(keys[i] == keys[j])
+        return 32;
+    else
+        return 32-(__lzcnt(keys[i]^keys[j]))-1;
+}
+
+
 #define RD 0
 
 int CALLBACK WinMain(HINSTANCE instance,
@@ -3022,7 +3034,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     }
     ODS("FINAL VALIDATION: %s \n", (correct == true) ? "PASSED" : "FAILED");
     
-    vkUnmapMemory(vk.device, mortondata_memory);
+    
     vkUnmapMemory(vk.device, flag_vector_zero_memory);
     vkUnmapMemory(vk.device, flag_vector_one_memory);
     vkUnmapMemory(vk.device, scan_vector_zero_memory);
@@ -3030,12 +3042,193 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkUnmapMemory(vk.device, flag_sum_zero_memory);
     vkUnmapMemory(vk.device, flag_sum_one_memory);
     vkUnmapMemory(vk.device, sum_scan_memory);
-    vkUnmapMemory(vk.device, sorted_mortons_memory);
+    vkUnmapMemory(vk.device, mortondata_memory);
+    
+    
     
     
     
     // --- build a tree over the Morton codes
+    worksize = 32;
     
+    primitive_entry *sorted_keys = (primitive_entry *)calloc(worksize, sizeof(primitive_entry));
+    memcpy(sorted_keys, sorted_mortons_mapptr, worksize*sizeof(primitive_entry));
+    for(u32 i = 0; i < worksize; i++)
+    {
+        ODS("%2d %s \n", i, DecToBin(sorted_keys[i].code, 32));
+    }
+    ODS("\n");
+    
+    vkUnmapMemory(vk.device, sorted_mortons_memory);
+    
+    
+    
+    typedef struct
+    {
+        s32 parent;
+        s32 left;
+        s32 right;
+    } tree_entry;
+    
+    u32 tree_datasize = (2 * worksize - 1) * sizeof(tree_entry);
+    
+    VkDeviceMemory tree_memory;
+    VkBuffer tree_buffer = CreateBuffer(tree_datasize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                                        vk.device, gpu_memprops,
+                                        &tree_memory);
+    
+    
+    tree_entry *tree_data = (tree_entry *)calloc(2*worksize-1, sizeof(tree_entry));
+    
+    tree_data[0].parent = -1;  // the root has no parent
+    
+    // write -1 to left and right of leaves, as they have no children
+    for(u32 i = worksize-1; i < 2*worksize-1; i++)
+    {
+        tree_data[i].left  = -1;
+        tree_data[i].right = -1;
+    }
+    
+    void *tree_mapptr;
+    vkMapMemory(vk.device, tree_memory, 0, VK_WHOLE_SIZE, 0, &tree_mapptr);
+    memcpy(tree_mapptr, tree_data, tree_datasize);
+    
+    
+    in_struct *tree_in = (in_struct *)calloc(1, sizeof(in_struct));
+    tree_in->shader_file = String("../code/tree_shader.spv");
+    
+    tree_in->resource_count = 2;
+    
+    tree_in->resources = (resource_record *)calloc(tree_in->resource_count, sizeof(resource_record));
+    tree_in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    tree_in->resources[0].buffer = sorted_mortons_buffer;
+    tree_in->resources[0].memory = sorted_mortons_memory;
+    tree_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    tree_in->resources[1].buffer = tree_buffer;
+    tree_in->resources[1].memory = tree_memory;
+    
+    tree_in->pcr_size = 1;
+    tree_in->pcr_data = (u32 *)calloc(tree_in->pcr_size, sizeof(u32));
+    tree_in->pcr_data[0] = worksize;
+    
+    out_struct *tree_out = CreateComputePipeline(tree_in);
+    
+    
+    
+    blockcount = worksize / blocksize;
+    
+    vkUpdateDescriptorSets(vk.device, tree_out->descwrite_count, tree_out->descwrites, 0, NULL);
+    
+    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
+    vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, tree_out->pipe_layout, 0, 1, &tree_out->pipe_dset, 0, NULL);
+    vkCmdPushConstants(commandbuffer, tree_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, tree_in->pcr_size * sizeof(u32), tree_in->pcr_data);
+    vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, tree_out->pipe);
+    vkCmdDispatch(commandbuffer, blockcount, 1, 1);
+    vkEndCommandBuffer(commandbuffer);
+    
+    result = vkQueueSubmit(vk.queue, 1, &compute_si, fence);
+	ODS_RES("Execution: %s \n");
+    result = vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
+    ODS_RES("Suspicious fence wait: %s \n");
+    result = vkGetFenceStatus(vk.device, fence);
+    ODS_RES("Suspicious fence status: %s \n");
+    result = vkResetFences(vk.device, 1, &fence);
+	ODS_RES("Suspicious fence reset: %s \n");
+    
+    memcpy(tree_data, tree_mapptr, tree_datasize);
+    vkUnmapMemory(vk.device, tree_memory);
+    
+    
+    u32 *sorted_values = (u32 *)calloc(worksize, sizeof(u32));
+    for(u32 i = 0; i < worksize; i++)
+        sorted_values[i] = sorted_keys[i].code;
+    
+    tree_entry *tree_check = (tree_entry *)calloc(2*worksize-1, sizeof(tree_entry));
+    tree_check[0].parent = -1;
+    
+    u32 n = worksize;
+    for(u32 i = (n-1); i < (2*n-1); i++)
+    {
+        tree_check[i].left  = -1;
+        tree_check[i].right = -1;
+    }
+    
+    for(u32 i = 0; i < n; i++)
+    {
+        s32 d = ((delta(sorted_values, n, i, i+1) - delta(sorted_values, n, i, i-1)) > 0) ? 1: -1;
+        
+        s32 delta_min = delta(sorted_values, n, i, i-d);
+        
+        s32 lmax = 2;
+        while(delta(sorted_values, n, i, i+lmax*d) > delta_min)
+            lmax *= 2;
+        
+        u32 l = 0;
+        //for(r32 m = 2.0f, s32 t = (s32)ceil((r32)lmax/m); t >= 1; m /= 2)
+        r32 m = 2.0f;
+        s32 t = (s32)(lmax/m);
+        for(; t >= 1; t = (s32)(lmax/m))
+        {
+            s32 del = delta(sorted_values, n, i, i+(t+l)*d);
+            if(del > delta_min)
+                l += t;
+            m *= 2;
+        }
+        
+        s32 j = i + l*d;
+        
+        s32 gamma = 0;
+        if(i != j)
+        {
+            s32 delta_node = delta(sorted_values, n, i, j);
+            
+            s32 s = 0;
+            r32 m = 2.0f;
+            s32 t = (s32)ceil(((r32)l)/m);
+            for(; t > 1; t = (s32)ceil(((r32)l)/m))
+            {
+                s32 del = delta(sorted_values, n, i, i+(s+t)*d);
+                if(del > delta_node)
+                    s += t;
+                m *= 2.0f;
+            }
+            t = 1;
+            if(delta(sorted_values, n, i, i+(s+t)*d) > delta_node)
+                s += t;
+            gamma = i + s*d + min(d, 0);
+        }
+        else
+            gamma = min(i, j);
+        
+        if(min(i,j) == gamma)
+            tree_check[i].left = gamma+n;
+        else
+            tree_check[i].left = gamma;
+        
+        if(max(i,j) == (gamma+1))
+            tree_check[i].right = gamma+1+n;
+        else
+            tree_check[i].right = gamma+1;
+        
+        tree_check[tree_check[i].left].parent  = i;
+        tree_check[tree_check[i].right].parent = i;
+    }
+    
+    correct = true;
+    for(u32 i = 0; i < (2*worksize-1); i++)
+    {
+        if((tree_data[i].parent     != tree_check[i].parent)     ||
+           (tree_data[i].left       != tree_check[i].left)       ||
+           (tree_data[i].right      != tree_check[i].right))
+        {
+            ODS("- Divergence at %s %d \n", (i < worksize) ? "node" : "leaf", i);
+            correct = false;
+        }
+    }
+    ODS("Tree construction verification: %s \n", correct ? "PASSED" : "FAILED");
+    
+    // --- walk the tree, calculate bounding boxes for every node
     
     exit(0);
     
