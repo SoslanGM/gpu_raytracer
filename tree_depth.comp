@@ -1,0 +1,37 @@
+#version 460
+
+layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+layout (push_constant) uniform range
+{
+    uint thread_count;
+};
+
+struct tree_entry
+{
+    int parent;
+    int left;
+    int right;
+};
+layout (std430, set = 0, binding = 0) coherent buffer TreeData   { tree_entry tree_data[]; };
+layout (std430, set = 0, binding = 1) coherent buffer TreeDepths { uint tree_depths[]; };
+
+
+void main()
+{
+    uint global_index = gl_GlobalInvocationID.x;
+    if(global_index > thread_count)
+        return;
+    
+#if 0
+    uint current_node = global_index;
+    uint depth = 0;
+    while(tree_data[current_node].parent != -1)
+    {
+        depth++;
+        current_node = tree_data[current_node].parent;
+    }
+    
+    tree_depths[global_index] = depth;
+#endif
+}

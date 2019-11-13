@@ -127,7 +127,7 @@ void SetupQueue()
     // ---
     u32 queuefam_propcount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(vk.gpu, &queuefam_propcount, NULL);
-    VkQueueFamilyProperties *queue_famprops = (VkQueueFamilyProperties *)malloc(sizeof(VkQueueFamilyProperties) * queuefam_propcount);
+    VkQueueFamilyProperties *queue_famprops = (VkQueueFamilyProperties *)malloc(sizeof(VkQueueFamilyProperties) * queuefam_propcount);  // FREE
     vkGetPhysicalDeviceQueueFamilyProperties(vk.gpu, &queuefam_propcount, queue_famprops);
     
     ODS("> Queue family count: %d\n", queuefam_propcount);
@@ -299,7 +299,7 @@ void GetComputePipeline(char *shader)
 
 char *DecToBin(u64 n, u32 width)
 {
-    char *binnum = (char *)malloc(width+1);
+    char *binnum = (char *)malloc(width+1);  // FREE after ODS
     binnum[width] = '\0';
     
     for(int i = 0; i < width; i++)
@@ -992,8 +992,8 @@ out_struct *CreateComputePipeline(in_struct *in)
     dspoolci.poolSizeCount = 1;
     dspoolci.pPoolSizes    = &poolsize;
     VkDescriptorPool dspool;
-    vkCreateDescriptorPool(vk.device, &dspoolci, NULL, &dspool);
-    
+    result = vkCreateDescriptorPool(vk.device, &dspoolci, NULL, &dspool);  // <--- crashes here without validation layers
+    ODS_RES("Compute pipeline descriptor pool creation: %s \n");
     
     
     u32 running_binding_index = 0;
@@ -1012,8 +1012,8 @@ out_struct *CreateComputePipeline(in_struct *in)
     dslayout_ci.flags        = 0;
     dslayout_ci.bindingCount = in->resource_count;
     dslayout_ci.pBindings    = bindings;
-    vkCreateDescriptorSetLayout(vk.device, &dslayout_ci, NULL, &out->pipe_dslayout);
-    
+    result = vkCreateDescriptorSetLayout(vk.device, &dslayout_ci, NULL, &out->pipe_dslayout);
+    ODS_RES("Compute pipeline descriptor set layout creation: %s \n");
     
     
     VkPipelineLayoutCreateInfo layout_ci = {};
@@ -1037,7 +1037,8 @@ out_struct *CreateComputePipeline(in_struct *in)
         layout_ci.pushConstantRangeCount = 0;
         layout_ci.pPushConstantRanges    = NULL;
     }
-    vkCreatePipelineLayout(vk.device, &layout_ci, NULL, &out->pipe_layout);
+    result = vkCreatePipelineLayout(vk.device, &layout_ci, NULL, &out->pipe_layout);  // <--- crashes here with them
+    ODS_RES("Compute pipeline layout creation: %s \n");
     
     
     
@@ -1334,7 +1335,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     // - making room for each of coord components
     u32 model_tricount = model.index_count / 3;
-    r32 *xs = (r32 *)malloc(model_tricount * sizeof(r32));
+    r32 *xs = (r32 *)malloc(model_tricount * sizeof(r32));  // FREE after you're done with global AABB
     r32 *ys = (r32 *)malloc(model_tricount * sizeof(r32));
     r32 *zs = (r32 *)malloc(model_tricount * sizeof(r32));
     for(u32 i = 0; i < model_tricount; i++)
@@ -1732,7 +1733,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     u32 answer_range = controls.write_offset + 1;
     
-    r32 *x_res = (r32 *)malloc(answer_range * sizeof(r32));
+    r32 *x_res = (r32 *)malloc(answer_range * sizeof(r32));       // FREE after... soon after.
     memcpy(x_res, (r32 *)xs_mapptr, answer_range * sizeof(r32));
     
     r32 *y_res = (r32 *)malloc(answer_range * sizeof(r32));
@@ -1782,7 +1783,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // CPU impl
-    bvhdata *step2_cpu = (bvhdata *)malloc(sizeof(bvhdata) * model_tricount);
+    bvhdata *step2_cpu = (bvhdata *)malloc(sizeof(bvhdata) * model_tricount);  // FREE after the loop
     
     for(u32 i = 0; i < model_tricount; i++)
     {
@@ -1841,6 +1842,9 @@ int CALLBACK WinMain(HINSTANCE instance,
         step2_cpu[i].bounding_box.upper.z   = upper_z;
         step2_cpu[i].bounding_box.upper.pad = 0;
     }
+    
+    // FREE step2_cpu here
+    
     //exit(0);
     
     
@@ -2346,6 +2350,10 @@ int CALLBACK WinMain(HINSTANCE instance,
         morton_data[i].code  = step2_data[i].morton_code;
     }
     
+    // FREE step2_data here
+    
+    
+    
     for(u32 i = 0; i < worksize; i++)
     {
         ODS("%5d %s \n", i, DecToBin(morton_data[i].code, 32));
@@ -2630,6 +2638,7 @@ int CALLBACK WinMain(HINSTANCE instance,
 #define PRINT 0
     u32 printsize = 32;
     
+    // a lot of emancipation's about to happen here...
     for(u32 i = 0; i < process_digitcount; i++)
     {
         //ODS("> PROCESSING DIGIT %d \n", i);
@@ -2657,7 +2666,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         
         
         // - verify results
-        u32 *step1_check_flag_vector_zero = (u32 *)malloc(workdata_size);
+        u32 *step1_check_flag_vector_zero = (u32 *)malloc(workdata_size);  // FREE at the end of the loop
         u32 *step1_check_flag_vector_one  = (u32 *)malloc(workdata_size);
         for(u32 j = 0; j < worksize; j++)
         {
@@ -3053,11 +3062,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     primitive_entry *sorted_keys = (primitive_entry *)calloc(worksize, sizeof(primitive_entry));
     memcpy(sorted_keys, sorted_mortons_mapptr, worksize*sizeof(primitive_entry));
-    for(u32 i = 0; i < worksize; i++)
-    {
-        ODS("%2d %s \n", i, DecToBin(sorted_keys[i].code, 32));
-    }
-    ODS("\n");
     
     vkUnmapMemory(vk.device, sorted_mortons_memory);
     
@@ -3084,7 +3088,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     tree_entry *tree_data = (tree_entry *)calloc(2*worksize-1, sizeof(tree_entry));
     
-#if 1
     tree_data[0].parent = -1;  // the root has no parent
     
     // write -1 to left and right of leaves, as they have no children
@@ -3093,13 +3096,13 @@ int CALLBACK WinMain(HINSTANCE instance,
         tree_data[i].left  = -1;
         tree_data[i].right = -1;
     }
-#endif
     
     void *tree_mapptr;
     vkMapMemory(vk.device, tree_memory, 0, VK_WHOLE_SIZE, 0, &tree_mapptr);
     memcpy(tree_mapptr, tree_data, tree_datasize);
     
     
+    // you realize how easy it is to META this? :)
     in_struct *tree_in = (in_struct *)calloc(1, sizeof(in_struct));
     tree_in->shader_file = String("../code/tree_shader.spv");
     
@@ -3149,7 +3152,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     for(u32 i = 0; i < worksize; i++)
         sorted_values[i] = sorted_keys[i].code;
     
-    tree_entry *tree_check = (tree_entry *)calloc(2*worksize-1, sizeof(tree_entry));
+    tree_entry *tree_check = (tree_entry *)calloc(2*worksize-1, sizeof(tree_entry));  // FREE after the validation
     tree_check[0].parent = -1;
     
     u32 n = worksize;
@@ -3239,7 +3242,102 @@ int CALLBACK WinMain(HINSTANCE instance,
     }
     ODS("Tree construction verification: %s \n", correct ? "PASSED" : "FAILED");
     
+    
+    
+    
+    
+    // TO DO: there is no provision on some of the compute steps for thread counts not cleanly divisible by 32. DANGER!
+    // I would expect the rabbit and the dragon to have some hiccups due to that.
+    
+    
+    
+    
+    
+    // --- Before implementing BVH on GPU, do it on CPU.
+    // And for that, you need to explore the tree first.
+    // Which is real easy. An array of 15487 values, each walks up until the parent is -1.
+    // Which is also real easy to do on GPU :P
+    
+    // Later, counting up all the depth values tells me how many there are on each level,
+    //  and I can write nodes into lists of levels. Then I'll have an easy time calcing AABBs on CPU.
+    
+    // inputs: tree_check.
+    
+    VkDeviceMemory tree_depth_memory;
+    VkBuffer tree_depth_buffer = CreateBuffer(worksize * sizeof(u32), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                                              vk.device, gpu_memprops,
+                                              &tree_depth_memory);
+    
+    
+    in_struct *tree_depth_in = (in_struct *)calloc(1, sizeof(in_struct));
+    tree_depth_in->shader_file = String("../code/tree_depth.spv");
+    
+    tree_depth_in->resource_count = 2;
+    
+    tree_depth_in->resources = (resource_record *)calloc(tree_depth_in->resource_count, sizeof(resource_record));
+    tree_depth_in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    tree_depth_in->resources[0].buffer = tree_buffer;
+    tree_depth_in->resources[0].memory = tree_memory;
+    tree_depth_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    tree_depth_in->resources[1].buffer = tree_depth_buffer;
+    tree_depth_in->resources[1].memory = tree_depth_memory;
+    
+    tree_depth_in->pcr_size = 1;
+    tree_depth_in->pcr_data = (u32 *)calloc(tree_depth_in->pcr_size, sizeof(u32));
+    tree_depth_in->pcr_data[0] = worksize;
+    
+    out_struct *tree_depth_out = CreateComputePipeline(tree_depth_in);
+    
+    
+    
+    vkUpdateDescriptorSets(vk.device, tree_depth_out->descwrite_count, tree_depth_out->descwrites, 0, NULL);
+    
+    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
+    vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, tree_depth_out->pipe_layout, 0, 1, &tree_depth_out->pipe_dset, 0, NULL);
+    vkCmdPushConstants(commandbuffer, tree_depth_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, tree_depth_in->pcr_size * sizeof(u32), tree_depth_in->pcr_data);
+    vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, tree_depth_out->pipe);
+    vkCmdDispatch(commandbuffer, blockcount, 1, 1);
+    vkEndCommandBuffer(commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &compute_si, fence);
+    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &fence);
+    
+    
+    
+    u32 *tree_depth_array = (u32 *)calloc(worksize, sizeof(u32));
+    void *tree_depth_mapptr;
+    vkMapMemory(vk.device, tree_depth_memory, 0, VK_WHOLE_SIZE, 0, &tree_depth_mapptr);
+    memcpy(tree_depth_array, tree_depth_mapptr, worksize * sizeof(u32));
+    vkUnmapMemory(vk.device, tree_depth_memory);
+    
+    u32 depth_levels[32];
+    for(u32 i = 0; i < worksize; i++)
+    {
+        depth_levels[tree_depth_array[i]]++;
+    }
+    
+    ODS("Depth distribution: \n");
+    for(u32 i = 0; i < 32; i++)
+    {
+        ODS("%2d : %5d\n", i, depth_levels[i]);
+    }
+    ODS("\n");
+    
     // --- walk the tree, calculate bounding boxes for every node
+    
+    
+    
+    // --- tree compaction is a locality improvement. Fool around with it if you want, but it's probably not important for a monkey.
+    
+    
+    
+    
+    
+    
+    
+    
     
     exit(0);
     
