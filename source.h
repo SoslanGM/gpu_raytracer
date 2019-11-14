@@ -15,7 +15,8 @@ _snprintf_s(ods_buf, sizeof(ods_buf), __VA_ARGS__); \
 printf(ods_buf);
 #endif
 
-#define ODS_RES(message) ODS(message, RevEnum(vk_enums.result_enum, result));
+// retired for now, since if makes freeing a temporary string harder.
+//#define ODS_RES(message) ODS(message, RevEnum(vk_enums.result_enum, result));
 
 
 
@@ -53,7 +54,7 @@ typedef struct
     u32 length;
     char *ptr;
 } string;
-string *String(u32 size)   // empty string of a size
+string *String(u32 size)
 {
     string *result = (string *)calloc(1, sizeof(string));
     result->length = size;
@@ -61,7 +62,7 @@ string *String(u32 size)   // empty string of a size
     
     return result;
 }
-string *String(char *str)  // encapsulated string. Don't forget the terminator!
+string *String(char *str)
 {
     string *result = (string *)calloc(1, sizeof(string));
     result->length = strlen(str);

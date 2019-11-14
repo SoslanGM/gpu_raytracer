@@ -46,6 +46,8 @@ char *NumToString(int number, bool debugprint)
     for(int i = signlength, j = length-1; i < length+signlength; i++, j--)
         result[i] = str[j];
     
+    free(str);
+    
     result[length+signlength] = terminator;
     
     return result;
@@ -94,12 +96,15 @@ string *RetrieveEnum(char *filename, char *enum_name)
     strncat(enum_searchterm, enum_name,   strlen(enum_name));
     
     char *pos = strstr(buffer->ptr, enum_searchterm);
+    free(enum_searchterm);
     if(pos == NULL)
     {
         ODS("Wrong enum name!\n");
         ODS("You were searching for this: %s\n", enum_name);
         exit(0);
     }
+    
+    free(buffer);
     
     char *begin = strchr(pos,   braceopen)  + 2;  // scroll forward a brace and a newline
     char *end   = strchr(begin, braceclose) - 1;  // scroll back a newline
@@ -125,6 +130,8 @@ char *RetrieveVkEnumString(string *vkenumbuffer, u32 enumvalue, bool debugprint)
     
     int length = 0;
     char *enumstring = FindLine(vkenumbuffer->ptr, &length, valuestring);
+    
+    free(valuestring);
     
     Tokenizer.At = enumstring;
     Token token = GetToken();
@@ -189,6 +196,12 @@ void LoadVkEnums()
     vk_enums.presentmode_enum = RetrieveEnum(header_path, "VkPresentModeKHR");
     vk_enums.imagelayout_enum = RetrieveEnum(header_path, "VkImageLayout");
     vk_enums.pipeflags_enum   = RetrieveEnum(header_path, "VkPipelineStageFlagBits");
+    
+    free(header_path);
+    free(header_end->ptr);  // Lol, string needs a special free function :D
+    free(header_end);
+    free(vk_sdk_path->ptr);
+    free(vk_sdk_path);
 }
 
 
@@ -197,10 +210,18 @@ void EnumerateGlobalExtensions()
 {
     u32 global_propscount;
     result = vkEnumerateInstanceExtensionProperties(NULL, &global_propscount, NULL);
-    ODS_RES("Instance extension props(count): %s\n");
+    
+    char *rev = RevEnum(vk_enums.result_enum, result);
+    ODS("Instance extension props(count): %s\n", rev);
+    free(rev);
+    
     VkExtensionProperties *global_props = (VkExtensionProperties *)malloc(sizeof(VkExtensionProperties) * global_propscount);
     result = vkEnumerateInstanceExtensionProperties(NULL, &global_propscount, global_props);
-    ODS_RES("Instance extension props(fill):  %s\n");
+    
+    char *rev1 = RevEnum(vk_enums.result_enum, result);
+    ODS("Instance extension props(fill):  %s\n", rev1);
+    free(rev1);
+    
     
     ODS("\n> Instance-wide extensions: %d\n", global_propscount);
     for(u32 i = 0; i < global_propscount; i++)
@@ -212,16 +233,25 @@ void EnumerateGlobalExtensions()
         ODS("%2d - %-40s | %d.%d.%d\n", i, global_props[i].extensionName, major, minor, patch);
     }
     ODS("\n");
+    
+    free(global_props);
 }
 
 void EnumerateLayerExtensions()
 {
     u32 layer_count = 0;
     result = vkEnumerateInstanceLayerProperties(&layer_count, NULL);
-    ODS_RES("Instance layer props(count): %s\n");
+    
+    char *rev = RevEnum(vk_enums.result_enum, result);
+    ODS("Instance layer props(count): %s\n", rev);
+    free(rev);
+    
     VkLayerProperties *layer_props = (VkLayerProperties *)malloc(sizeof(VkLayerProperties) * layer_count);
     result = vkEnumerateInstanceLayerProperties(&layer_count, layer_props);
-    ODS_RES("Instance layer props(fill):  %s\n");
+    
+    char *rev1 = RevEnum(vk_enums.result_enum, result);
+    ODS("Instance layer props(fill):  %s\n", rev1);
+    free(rev1);
     
     ODS("\n> Instance layers: %d\n", layer_count);
     for(u32 i = 0; i < layer_count; i++)
@@ -260,7 +290,11 @@ void EnumerateLayerExtensions()
                 u32 patch = VK_VERSION_PATCH(version);
                 ODS(" - %2d - %-37s | %d.%d.%d\n", i, ext_props[i].extensionName, major, minor, patch);
             }
+            
+            free(ext_props);
         }
     }
     ODS("\n");
+    
+    free(layer_props);
 }
