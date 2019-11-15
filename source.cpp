@@ -4,8 +4,8 @@
 #include <stdlib.h>
 #include <shlwapi.h>
 
-#include "D:/RenderDoc/renderdoc_app.h"
-RENDERDOC_API_1_1_2 *rdoc_api = NULL;
+//#include "D:/RenderDoc/renderdoc_app.h"
+//RENDERDOC_API_1_1_2 *rdoc_api = NULL;
 
 // VULKANSSS
 #define VK_USE_PLATFORM_WIN32_KHR
@@ -24,12 +24,12 @@ VkResult result;
 #include "../lib/stb_image.h"
 
 // PRECIOUSSS
-#include "M:/types.h"
-#include "M:/special_symbols.h"
+#include "types.h"
+#include "special_symbols.h"
 #include "source.h"
 #include "vk_extract.h"
 #include "file_io.h"
-#include "M:/tokenizer.cpp"
+#include "tokenizer.cpp"
 #include "vk_prepare.h"
 #include "time.h"
 //#include "vk_setup.h"
@@ -233,7 +233,7 @@ VkShaderModule GetShaderModule(char *shaderfile)
     return shadermodule;
 }
 
-
+#if 0
 void GetComputePipeline(char *shader)
 {
     VkPipelineShaderStageCreateInfo stage_ci = {};
@@ -306,7 +306,7 @@ void GetComputePipeline(char *shader)
     
     vkCreateComputePipelines(vk.device, NULL, 1, &compipe_ci, NULL, &vk.compipe);
 }
-
+#endif
 
 char *DecToBin(u64 n, u32 width)
 {
@@ -1052,6 +1052,8 @@ typedef struct
 {
     u32 descwrite_count;
     VkWriteDescriptorSet *descwrites;
+    VkDescriptorPool pool;
+    VkShaderModule module;
     VkDescriptorSet pipe_dset;
     VkDescriptorSetLayout pipe_dslayout;
     VkPipelineLayout pipe_layout;
@@ -1076,8 +1078,8 @@ out_struct *CreateComputePipeline(in_struct *in)
     dspoolci.maxSets       = in->resource_count;
     dspoolci.poolSizeCount = 1;
     dspoolci.pPoolSizes    = &poolsize;
-    VkDescriptorPool dspool;
-    result = vkCreateDescriptorPool(vk.device, &dspoolci, NULL, &dspool);  // <--- crashes here without validation layers
+    //VkDescriptorPool dspool;
+    result = vkCreateDescriptorPool(vk.device, &dspoolci, NULL, &out->pool);  // <--- crashes here without validation layers
     char *rev = RevEnum(vk_enums.result_enum, result);
     ODS("Compute pipeline descriptor pool creation: %s \n", rev);
     free(rev);
@@ -1133,14 +1135,15 @@ out_struct *CreateComputePipeline(in_struct *in)
     
     
     
-    VkShaderModule module = GetShaderModule(in->shader_file->ptr);
+    //VkShaderModule module = GetShaderModule(in->shader_file->ptr);
+    out->module = GetShaderModule(in->shader_file->ptr);
     
     VkPipelineShaderStageCreateInfo stage = {};
     stage.sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     stage.pNext               = NULL;
     stage.flags               = 0;
     stage.stage               = VK_SHADER_STAGE_COMPUTE_BIT;
-    stage.module              = module;
+    stage.module              = out->module;
     stage.pName               = "main";
     
     VkComputePipelineCreateInfo ci = {};
@@ -1156,10 +1159,13 @@ out_struct *CreateComputePipeline(in_struct *in)
     VkDescriptorSetAllocateInfo dsai = {};
     dsai.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     dsai.pNext              = NULL;
-    dsai.descriptorPool     = dspool;
+    dsai.descriptorPool     = out->pool;
     dsai.descriptorSetCount = 1;
     dsai.pSetLayouts        = &out->pipe_dslayout;
-    vkAllocateDescriptorSets(vk.device, &dsai, &out->pipe_dset);
+    result = vkAllocateDescriptorSets(vk.device, &dsai, &out->pipe_dset);
+    char *rev3 = RevEnum(vk_enums.result_enum, result);
+    ODS("Descriptor set allocation: %s \n", rev3);
+    free(rev3);
     
     out->descwrite_count = in->resource_count;
     out->descwrites = (VkWriteDescriptorSet *)calloc(out->descwrite_count, sizeof(VkWriteDescriptorSet));
@@ -1183,7 +1189,16 @@ out_struct *CreateComputePipeline(in_struct *in)
     return out;
 }
 
-
+void CleanPipeline(out_struct *out)
+{
+    vkDestroyShaderModule(vk.device, out->module, NULL);
+    vkDestroyDescriptorPool(vk.device, out->pool, NULL);
+    vkDestroyDescriptorSetLayout(vk.device, out->pipe_dslayout, NULL);
+    vkDestroyPipelineLayout(vk.device, out->pipe_layout, NULL);
+    vkDestroyPipeline(vk.device, out->pipe, NULL);
+    free(out->descwrites);
+    free(out);
+}
 
 s32 delta(u32 *keys, u32 n, u32 i, u32 j)
 {
@@ -1203,26 +1218,6 @@ int CALLBACK WinMain(HINSTANCE instance,
                      LPSTR commandLine,
                      int showMode)
 {
-#if RD
-    HMODULE mod = NULL;
-    if(mod = LoadLibrary("D:/RenderDoc/renderdoc.dll"))
-    {
-        pRENDERDOC_GetAPI RENDERDOC_GetAPI = (pRENDERDOC_GetAPI)GetProcAddress(mod, "RENDERDOC_GetAPI");
-        int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_4_0, (void **)&rdoc_api);
-        if(ret != 1)
-        {
-            ODS("Can't get RD API\n");
-            exit(0);
-        }
-    }
-    else
-    {
-        ODS("Can't load RD");
-        exit(0);
-    }
-#endif
-    
-    
     app.instance = instance;
     app.window_width = 1280;
     app.window_height = 720;
@@ -1264,7 +1259,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     u32 layer_count = sizeof(layer_names)/sizeof(layer_names[0]);
     
 #define val 1
-    
     GetVulkanInstance(ext_names,   ext_count,
                       #if val
                       layer_names, layer_count);
@@ -1274,8 +1268,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     ODS("Here's a Vulkan instance: 0x%p\n", &vk.instance);
     Vulkan_LoadExtensionFunctions(vk.instance);
-    
-    RENDERDOC_DevicePointer RD_device = RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE(vk.instance);
     
     SetupDebugging();
     GetGPU();
@@ -2327,8 +2319,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     }
     
     CheckMortonSorting(morton_data, worksize);
-    
-    
 #endif
     
     
@@ -3164,7 +3154,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     for(u32 i = 0; i < worksize; i++)
     {
         char *morton = DecToBin(sorted_mortons[i].code, 32);
-        ODS("%5d %s \n", sorted_mortons[i].index, morton);
+        ODS("%5d %5d %s \n", i, sorted_mortons[i].index, morton);
         free(morton);
     }
     ODS("\n");
@@ -3259,7 +3249,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     out_struct *tree_out = CreateComputePipeline(tree_in);
     
     
-    
     blockcount = worksize / blocksize;
     
     vkUpdateDescriptorSets(vk.device, tree_out->descwrite_count, tree_out->descwrites, 0, NULL);
@@ -3306,6 +3295,8 @@ int CALLBACK WinMain(HINSTANCE instance,
         tree_check[i].right = -1;
     }
     
+    
+    // last index == n-2, so processing n-1 elements
     for(u32 i = 0; i < n-1; i++)
     {
         s32 d = ((delta(sorted_values, n, i, i+1) - delta(sorted_values, n, i, i-1)) > 0) ? 1: -1;
@@ -3318,7 +3309,6 @@ int CALLBACK WinMain(HINSTANCE instance,
             lmax *= 2;
         
         u32 l = 0;
-        //for(r32 m = 2.0f, s32 t = (s32)ceil((r32)lmax/m); t >= 1; m /= 2)
         r32 m = 2.0f;
         s32 t = (s32)(lmax/m);
         for(; t >= 1; t = (s32)(lmax/m))
@@ -3356,18 +3346,41 @@ int CALLBACK WinMain(HINSTANCE instance,
             gamma = min(i, j);
         
         if(min(i,j) == gamma)
-            tree_check[i].left = gamma+n;
+            tree_check[i].left = gamma+(n-1);
         else
             tree_check[i].left = gamma;
         
         if(max(i,j) == (gamma+1))
-            tree_check[i].right = gamma+1+n;
+            tree_check[i].right = gamma+1+(n-1);
         else
             tree_check[i].right = gamma+1;
         
         tree_check[i].d = d;
+#if 1
+        //ODS("Closing in on the suspect \n");
+        s32 left_index  = tree_check[i].left;
+        s32 right_index = tree_check[i].right;
+        if((left_index < 0) || (left_index >= (2*worksize-1)))
+        {
+            ODS("ALARM!!! %5d, left = %d \n", i, left_index);
+            //exit(0);
+        }
+        if((right_index < 0) || (right_index >= (2*worksize-1)))
+        {
+            ODS("ALARM!!! %5d, right = %d \n", i, right_index);
+            //exit(0);
+        }
+        
+        tree_check[left_index].parent  = i;
+        tree_check[right_index].parent = i;
+#endif
+#if 0
+        if()
+            ODS("%d %d \n", i, tree_check[i].left);
+        ODS("%d %d \n", i, tree_check[i].right);
         tree_check[tree_check[i].left].parent  = i;
         tree_check[tree_check[i].right].parent = i;
+#endif
     }
     
     correct = true;
@@ -3387,13 +3400,28 @@ int CALLBACK WinMain(HINSTANCE instance,
     ODS("Tree construction verification: %s \n", correct ? "PASSED" : "FAILED");
     
     
-    
+    ODS("Look at the tree here \n");
+    //exit(0);
     
     
     // TO DO: there is no provision on some of the compute steps for thread counts not cleanly divisible by 32. DANGER!
     // I would expect the rabbit and the dragon to have some hiccups due to that.
     
     
+    //exit(0);
+    
+    
+    
+    // --- Let's try vk-resource cleanup here.
+    // step1-7 pipelines, clean them up
+    CleanPipeline(step1_out);
+    CleanPipeline(step2_out);
+    CleanPipeline(step3_out);
+    CleanPipeline(step4_out);
+    CleanPipeline(step5_out);
+    CleanPipeline(step6_out);
+    CleanPipeline(step7_out);
+    CleanPipeline(tree_out);
     
     
     
@@ -3844,10 +3872,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkCreateSemaphore(vk.device, &sem_ci, NULL, &semaphore_acquired);
     
     
-#if RD
-    rdoc_api->StartFrameCapture(RD_device, app.window);
-#endif
-    
     
     u32 present_index = 0;
     result = vkAcquireNextImageKHR(vk.device, vk.swapchain, UINT64_MAX, semaphore_acquired, NULL, &present_index);
@@ -3971,11 +3995,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     char *rev6 = RevEnum(vk_enums.result_enum, result);
     ODS("Present result: %s\n", rev6);
     free(rev6);
-    
-#if RD
-    rdoc_api->EndFrameCapture(RD_device, app.window);
-    rdoc_api->GetCapture(0, "V:/core/capture.doc", NULL, NULL);
-#endif
     
     MSG msg;
     bool done = false;

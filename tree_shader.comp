@@ -45,6 +45,8 @@ void main()
 {
     int n = int(thread_count);
     int i = int(gl_GlobalInvocationID.x);
+    
+    // last index == n-2, so processing n-1 elements
     if(i > (n-2))
         return;
     
@@ -96,12 +98,12 @@ void main()
     // - which means I should make a bigger block for the output array and prewrite its last n elements
     // If a split position equals either the beginning or the end of the range, it's a leaf.
     if(gamma == min(i, j))
-        tree_data[i].left = gamma+n;  // left is a leaf
+        tree_data[i].left = gamma+(n-1);  // left is a leaf
     else
         tree_data[i].left = gamma;    // left is a node
     
     if((gamma+1) == max(i, j))
-        tree_data[i].right = gamma+1+n;
+        tree_data[i].right = gamma+1+(n-1);
     else
         tree_data[i].right = gamma+1;
     

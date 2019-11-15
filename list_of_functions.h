@@ -73,4 +73,10 @@ X(vkGetFenceStatus) \
 X(vkGetPhysicalDeviceQueueFamilyProperties2) \
 X(vkCreateComputePipelines) \
 X(vkCmdDispatch) \
-X(vkGetDescriptorSetLayoutSupport)
+X(vkGetDescriptorSetLayoutSupport) \
+X(vkDestroyShaderModule) \
+X(vkFreeDescriptorSets) \
+X(vkDestroyDescriptorPool) \
+X(vkDestroyDescriptorSetLayout) \
+X(vkDestroyPipelineLayout) \
+X(vkDestroyPipeline)
