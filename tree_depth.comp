@@ -9,6 +9,9 @@ layout (push_constant) uniform range
 
 struct tree_entry
 {
+    int d;
+    int delta_min;
+    int delta_node;
     int parent;
     int left;
     int right;
@@ -23,15 +26,14 @@ void main()
     if(global_index > thread_count)
         return;
     
-#if 0
-    uint current_node = global_index;
+    uint node = global_index;
     uint depth = 0;
-    while(tree_data[current_node].parent != -1)
+    
+    while(tree_data[node].parent != -1)
     {
+        node = tree_data[node].parent;
         depth++;
-        current_node = tree_data[current_node].parent;
     }
     
     tree_depths[global_index] = depth;
-#endif
 }

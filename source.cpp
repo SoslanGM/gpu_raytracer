@@ -1211,6 +1211,40 @@ s32 delta(u32 *keys, u32 n, u32 i, u32 j)
 }
 
 
+
+// I should really stop just piling them willy-nilly like that. Make a separate, probably not source.h file.
+typedef struct
+{
+    r32 x, y, z;
+} vertex3;
+typedef struct
+{
+    vertex3 lower;
+    vertex3 upper;
+} AABB;  // CPU-side
+
+typedef struct
+{
+    s32 d;
+    s32 delta_min;
+    s32 delta_node;
+    s32 parent;
+    s32 left;
+    s32 right;
+} tree_entry;
+
+/*
+AABB GetAABB(tree_entry *tree, u32 node)
+{
+    AABB result;
+    
+    AABB left = tree[node.left].
+    
+    return result;
+}
+*/
+
+
 #define RD 0
 
 int CALLBACK WinMain(HINSTANCE instance,
@@ -1423,9 +1457,9 @@ int CALLBACK WinMain(HINSTANCE instance,
     r32 *zs = (r32 *)malloc(model_tricount * sizeof(r32));
     for(u32 i = 0; i < model_tricount; i++)
     {
-        xs[i] = model.vertices[3*i];
-        ys[i] = model.vertices[3*i+1];
-        zs[i] = model.vertices[3*i+2];
+        xs[i] = model.vertices[8*i];
+        ys[i] = model.vertices[8*i+1];
+        zs[i] = model.vertices[8*i+2];
     }
     
     
@@ -1854,18 +1888,13 @@ int CALLBACK WinMain(HINSTANCE instance,
     typedef struct
     {
         r32 x, y, z;
-    } vertex3;
-    typedef struct
-    {
-        r32 x, y, z;
         u32 pad;
     } vertex3_padded;
-    
     typedef struct
     {
         vertex3_padded lower;
         vertex3_padded upper;
-    } AABB_padded;
+    } AABB_padded;  // GPU-side
     typedef struct
     {
         vertex3 cen;
@@ -1975,10 +2004,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkMapMemory(vk.device, model_vertex_memory, 0, VK_WHOLE_SIZE, 0, &model_vertex_mapptr);
     memcpy(model_vertex_mapptr, model.vertices, vertex_datasize);
     
-    
-    
-    
-    FreeParsedOBJ(&model_obj);
+    //FreeParsedOBJ(&model_obj);
     
     
     
@@ -2447,13 +2473,14 @@ int CALLBACK WinMain(HINSTANCE instance,
     // FREE step2_data here
     free(step2_data);
     
-    
+#if 0
     for(u32 i = 0; i < worksize; i++)
     {
         char *morton = DecToBin(morton_data[i].code, 32);
         ODS("%5d %s \n", i, morton);
         free(morton);
     }
+#endif
     
     // - prepare vulkan data
     // TO DO: replace CPU-side buffer with a staging buffer and a GPU-side buffer
@@ -3193,16 +3220,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
-    typedef struct
-    {
-        s32 d;
-        s32 delta_min;
-        s32 delta_node;
-        s32 parent;
-        s32 left;
-        s32 right;
-    } tree_entry;
-    
     u32 tree_datasize = (2 * worksize - 1) * sizeof(tree_entry);
     
     VkDeviceMemory tree_memory;
@@ -3484,9 +3501,11 @@ int CALLBACK WinMain(HINSTANCE instance,
     memcpy(tree_depth_array, tree_depth_mapptr, worksize * sizeof(u32));
     vkUnmapMemory(vk.device, tree_depth_memory);
     
-    u32 depth_levels[32];
+    u32 depth_levels[32] = {};
+    ODS("Depth values of nodes: \n");
     for(u32 i = 0; i < worksize; i++)
     {
+        ODS("%5d %5d \n", i, tree_depth_array[i]);
         depth_levels[tree_depth_array[i]]++;
     }
     
@@ -3497,7 +3516,202 @@ int CALLBACK WinMain(HINSTANCE instance,
     }
     ODS("\n");
     
+    
+    // --- trace node to check if the depth distribution is correct
+    u32 node_start = 10000;
+    s32 parent = 0;
+    u32 depth = 0;
+    u32 node = node_start;
+#if 0
+    while(tree_check[node].parent != -1)
+    {
+        ODS("%d -> ", node);
+        node = tree_check[node].parent;
+        depth++;
+    }
+    depth++;
+#endif
+#if 1
+    while(true)
+    {
+        if(tree_data[node].parent != -1)
+        {
+            depth++;
+            node = tree_data[node].parent;
+        }
+        else
+        {
+            ODS("Node %5d has depth %d \n", node_start, depth);
+            break;
+        }
+    }
+#endif
+    //ODS("0 \n");
+    //ODS("Node %5d has depth %d \n", node_start, depth);
+    
+    // according to the depth levels, make an array of arrays
+    u32 **depth_arrays = (u32 **)calloc(32, sizeof(u32 *));
+    for(u32 i = 0; i < 32; i++)
+    {
+        if(depth_levels[i] > 0)
+            depth_arrays[i] = (u32 *)calloc(depth_levels[i], sizeof(u32));
+    }
+    
+    u32 depth_counters[32] = {};
+    for(u32 i = 0; i < worksize-1; i++)
+    {
+        u32 current_depth_index = tree_depth_array[i];
+        depth_arrays[current_depth_index][depth_counters[current_depth_index]++] = i;
+    }
+    
+    
+    
+    
+    
+    // Calculate the BVH on CPU to ensure GPU computation results
+    
+    AABB *bvh_cpu = (AABB *)calloc(2*worksize-1, sizeof(AABB));
+    // - write leaf boxes (N)
+    u32 ipt = 3;  // indexes per triangle
+    u32 fpv = model.floats_per_vertex;
+    // this indexing convention is shite :/
+    u32 leaves_begin = worksize-1;
+    u32 leaves_end   = 2*worksize-1;
+    
+    r32 v_min = 10000.0f;
+    r32 vx_min = v_min, vy_min = v_min, vz_min = v_min;
+    r32 v_max = -10000.0f;
+    r32 vx_max = v_max, vy_max = v_max, vz_max = v_max;
+    
+    // The problem: index mismatch. I'm reading something else and not the actual vertex info.
+    for(u32 i = leaves_begin; i < leaves_end; i++)
+    {
+        u32 index = i-(worksize-1);
+        
+        // indexes
+        u32 i0 = model.indices[ipt*index];
+        u32 i1 = model.indices[ipt*index+1];
+        u32 i2 = model.indices[ipt*index+2];
+        
+        // vertexes
+        r32 v0_x = model.vertices[fpv*i0];
+        r32 v0_y = model.vertices[fpv*i0+1];
+        r32 v0_z = model.vertices[fpv*i0+2];
+        
+        r32 v1_x = model.vertices[fpv*i1];
+        r32 v1_y = model.vertices[fpv*i1+1];
+        r32 v1_z = model.vertices[fpv*i1+2];
+        
+        r32 v2_x = model.vertices[fpv*i2];
+        r32 v2_y = model.vertices[fpv*i2+1];
+        r32 v2_z = model.vertices[fpv*i2+2];
+        
+        if(vx_max < v0_x) vx_max = v0_x;
+        if(vy_max < v0_y) vy_max = v0_y;
+        if(vz_max < v0_z) vz_max = v0_z;
+        if(vx_max < v1_x) vx_max = v1_x;
+        if(vy_max < v1_y) vy_max = v1_y;
+        if(vz_max < v1_z) vz_max = v1_z;
+        if(vx_max < v2_x) vx_max = v2_x;
+        if(vy_max < v2_y) vy_max = v2_y;
+        if(vz_max < v2_z) vz_max = v2_z;
+        
+        if(vx_min > v0_x) vx_min = v0_x;
+        if(vy_min > v0_y) vy_min = v0_y;
+        if(vz_min > v0_z) vz_min = v0_z;
+        if(vx_min > v1_x) vx_min = v1_x;
+        if(vy_min > v1_y) vy_min = v1_y;
+        if(vz_min > v1_z) vz_min = v1_z;
+        if(vx_min > v2_x) vx_min = v2_x;
+        if(vy_min > v2_y) vy_min = v2_y;
+        if(vz_min > v2_z) vz_min = v2_z;
+        
+        // AABB
+        r32 lower_x = min(min(v0_x, v1_x), v2_x);
+        r32 lower_y = min(min(v0_y, v1_y), v2_y);
+        r32 lower_z = min(min(v0_z, v1_z), v2_z);
+        
+        r32 upper_x = max(max(v0_x, v1_x), v2_x);
+        r32 upper_y = max(max(v0_y, v1_y), v2_y);
+        r32 upper_z = max(max(v0_z, v1_z), v2_z);
+        
+        bvh_cpu[i].lower.x = lower_x;
+        bvh_cpu[i].lower.y = lower_y;
+        bvh_cpu[i].lower.z = lower_z;
+        
+        bvh_cpu[i].upper.x = upper_x;
+        bvh_cpu[i].upper.y = upper_y;
+        bvh_cpu[i].upper.z = upper_z;
+    }
+    // not to mention this ^ should be a slender function :'/
+    // I think moving all the typedef structs outside(where I used to do them) will enable all sorts of good code compression.
+    
+    // - write node boxes
+    // walk every level
+    for(s32 i = 31; i >= 0; i--)
+    {
+        if(depth_levels[i] > 0)
+        {
+            ODS("Processing level %d \n", i);
+            for(u32 j = 0; j < depth_levels[i]; j++)
+            {
+                u32 node = depth_arrays[i][j];
+                u32 left  = tree_check[node].left;
+                u32 right = tree_check[node].right;
+                
+#if 0            
+                ODS("Box of left(%5d): \n", left);
+                ODS("X: [ %+-7.3f | %+-7.3f ]\n", bvh_cpu[left].lower.x, bvh_cpu[left].upper.x);
+                ODS("Y: [ %+-7.3f | %+-7.3f ]\n", bvh_cpu[left].lower.y, bvh_cpu[left].upper.y);
+                ODS("Z: [ %+-7.3f | %+-7.3f ]\n", bvh_cpu[left].lower.z, bvh_cpu[left].upper.z);
+                
+                ODS("Box of right(%5d): \n", right);
+                ODS("X: [ %+-7.3f | %+-7.3f ]\n", bvh_cpu[right].lower.x, bvh_cpu[right].upper.x);
+                ODS("Y: [ %+-7.3f | %+-7.3f ]\n", bvh_cpu[right].lower.y, bvh_cpu[right].upper.y);
+                ODS("Z: [ %+-7.3f | %+-7.3f ]\n", bvh_cpu[right].lower.z, bvh_cpu[right].upper.z);
+#endif
+                bvh_cpu[node].lower.x = min(bvh_cpu[left].lower.x, bvh_cpu[right].lower.x);
+                bvh_cpu[node].lower.y = min(bvh_cpu[left].lower.y, bvh_cpu[right].lower.y);
+                bvh_cpu[node].lower.z = min(bvh_cpu[left].lower.z, bvh_cpu[right].lower.z);
+                
+                bvh_cpu[node].upper.x = max(bvh_cpu[left].upper.x, bvh_cpu[right].upper.x);
+                bvh_cpu[node].upper.y = max(bvh_cpu[left].upper.y, bvh_cpu[right].upper.y);
+                bvh_cpu[node].upper.z = max(bvh_cpu[left].upper.z, bvh_cpu[right].upper.z);
+#if 0                
+                ODS("Resulting box(node %5d) \n", node);
+                ODS("X: [ %+-7.3f | %+-7.3f ]\n", bvh_cpu[node].lower.x, bvh_cpu[node].upper.x);
+                ODS("Y: [ %+-7.3f | %+-7.3f ]\n", bvh_cpu[node].lower.y, bvh_cpu[node].upper.y);
+                ODS("Z: [ %+-7.3f | %+-7.3f ]\n", bvh_cpu[node].lower.z, bvh_cpu[node].upper.z);
+                ODS("\n");
+#endif
+            }
+            //exit(0);
+        }
+    }
+    
+    ODS("Global box: \n");
+    ODS("X: [ %+-7.3f | %+-7.3f ]\n", vx_min, vx_max);
+    ODS("Y: [ %+-7.3f | %+-7.3f ]\n", vy_min, vy_max);
+    ODS("Z: [ %+-7.3f | %+-7.3f ]\n", vz_min, vz_max);
+    ODS("\n");
+    
+#if 0
+    ODS("BVH: \n");
+    for(u32 i = 0; i < worksize-1; i++)
+    {
+        ODS("Node %5d: \n", i);
+        ODS("X: [ %+-7.3f | %+-7.3f ]\n", bvh_cpu[i].lower.x, bvh_cpu[i].upper.x);
+        ODS("Y: [ %+-7.3f | %+-7.3f ]\n", bvh_cpu[i].lower.y, bvh_cpu[i].upper.y);
+        ODS("Z: [ %+-7.3f | %+-7.3f ]\n", bvh_cpu[i].lower.z, bvh_cpu[i].upper.z);
+        ODS("\n");
+    }
+    ODS("\n");
+#endif
+    
+    
+    
     // --- walk the tree, calculate bounding boxes for every node
+    
     
     
     
