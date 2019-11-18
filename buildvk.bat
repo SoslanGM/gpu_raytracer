@@ -18,6 +18,8 @@ glslangValidator -V ..\code\step6_shader.comp -o ..\code\step6_shader.spv
 glslangValidator -V ..\code\step7_shader.comp -o ..\code\step7_shader.spv
 glslangValidator -V ..\code\tree_shader.comp -o ..\code\tree_shader.spv
 glslangValidator -V ..\code\tree_depth.comp -o ..\code\tree_depth.spv
+glslangValidator -V ..\code\bvh.comp -o ..\code\bvh.spv
+
 
 ::glslangValidator -V ..\code\shader.vert -o ..\code\shader_vert.spv
 glslangValidator -V ..\code\shader.frag -o ..\code\shader_frag.spv

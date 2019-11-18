@@ -9,9 +9,9 @@ layout (push_constant) uniform range
 
 struct tree_entry
 {
-    int d;
-    int delta_min;
-    int delta_node;
+    //int d;
+    //int delta_min;
+    //int delta_node;
     int parent;
     int left;
     int right;

@@ -1225,13 +1225,23 @@ typedef struct
 
 typedef struct
 {
-    s32 d;
-    s32 delta_min;
-    s32 delta_node;
+    //s32 d;
+    //s32 delta_min;
+    //s32 delta_node;
     s32 parent;
     s32 left;
     s32 right;
 } tree_entry;
+typedef struct
+{
+    //s32 d;
+    //s32 delta_min;
+    //s32 delta_node;
+    s32 parent;
+    s32 left;
+    s32 right;
+    s32 pad;
+} tree_entry_padded;
 
 /*
 AABB GetAABB(tree_entry *tree, u32 node)
@@ -3319,7 +3329,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         s32 d = ((delta(sorted_values, n, i, i+1) - delta(sorted_values, n, i, i-1)) > 0) ? 1: -1;
         
         s32 delta_min = delta(sorted_values, n, i, i-d);
-        tree_check[i].delta_min = delta_min;
+        //tree_check[i].delta_min = delta_min;
         
         s32 lmax = 2;
         while(delta(sorted_values, n, i, i+lmax*d) > delta_min)
@@ -3342,7 +3352,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         if(i != j)
         {
             s32 delta_node = delta(sorted_values, n, i, j);
-            tree_check[i].delta_node = delta_node;
+            //tree_check[i].delta_node = delta_node;
             
             s32 s = 0;
             r32 m = 2.0f;
@@ -3372,7 +3382,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         else
             tree_check[i].right = gamma+1;
         
-        tree_check[i].d = d;
+        //tree_check[i].d = d;
 #if 1
         //ODS("Closing in on the suspect \n");
         s32 left_index  = tree_check[i].left;
@@ -3403,12 +3413,15 @@ int CALLBACK WinMain(HINSTANCE instance,
     correct = true;
     for(u32 i = 0; i < (2*worksize-1); i++)
     {
-        if((tree_data[i].d          != tree_check[i].d)          ||
-           (tree_data[i].delta_min  != tree_check[i].delta_min)  ||
-           (tree_data[i].delta_node != tree_check[i].delta_node) ||
-           (tree_data[i].parent     != tree_check[i].parent)     ||
-           (tree_data[i].left       != tree_check[i].left)       ||
-           (tree_data[i].right      != tree_check[i].right))
+        if(
+            /*
+            (tree_data[i].d          != tree_check[i].d)          ||
+            (tree_data[i].delta_min  != tree_check[i].delta_min)  ||
+            (tree_data[i].delta_node != tree_check[i].delta_node) ||
+            */
+            (tree_data[i].parent     != tree_check[i].parent)     ||
+            (tree_data[i].left       != tree_check[i].left)       ||
+            (tree_data[i].right      != tree_check[i].right))
         {
             ODS("- Divergence at %s %d \n", (i < worksize) ? "node" : "leaf", i);
             correct = false;
@@ -3518,18 +3531,18 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // --- trace node to check if the depth distribution is correct
-    u32 node_start = 10000;
+    u32 node_start = 14345;
     s32 parent = 0;
     u32 depth = 0;
     u32 node = node_start;
-#if 0
+#if 1
     while(tree_check[node].parent != -1)
     {
         ODS("%d -> ", node);
         node = tree_check[node].parent;
         depth++;
     }
-    depth++;
+    ODS("%d \n", node);
 #endif
 #if 1
     while(true)
@@ -3570,7 +3583,14 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     // Calculate the BVH on CPU to ensure GPU computation results
     
-    AABB *bvh_cpu = (AABB *)calloc(2*worksize-1, sizeof(AABB));
+    //AABB *bvh_cpu = (AABB *)calloc(2*worksize-1, sizeof(AABB));
+    //AABB *bvh_gpu = (AABB *)calloc(2*worksize-1, sizeof(AABB));
+    
+    AABB_padded *bvh_cpu = (AABB_padded *)calloc(2*worksize-1, sizeof(AABB_padded));
+    AABB_padded *bvh_gpu = (AABB_padded *)calloc(2*worksize-1, sizeof(AABB_padded));
+    
+    
+    
     // - write leaf boxes (N)
     u32 ipt = 3;  // indexes per triangle
     u32 fpv = model.floats_per_vertex;
@@ -3583,7 +3603,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     r32 v_max = -10000.0f;
     r32 vx_max = v_max, vy_max = v_max, vz_max = v_max;
     
-    // The problem: index mismatch. I'm reading something else and not the actual vertex info.
     for(u32 i = leaves_begin; i < leaves_end; i++)
     {
         u32 index = i-(worksize-1);
@@ -3642,6 +3661,14 @@ int CALLBACK WinMain(HINSTANCE instance,
         bvh_cpu[i].upper.x = upper_x;
         bvh_cpu[i].upper.y = upper_y;
         bvh_cpu[i].upper.z = upper_z;
+        
+        bvh_gpu[i].lower.x = lower_x;
+        bvh_gpu[i].lower.y = lower_y;
+        bvh_gpu[i].lower.z = lower_z;
+        
+        bvh_gpu[i].upper.x = upper_x;
+        bvh_gpu[i].upper.y = upper_y;
+        bvh_gpu[i].upper.z = upper_z;
     }
     // not to mention this ^ should be a slender function :'/
     // I think moving all the typedef structs outside(where I used to do them) will enable all sorts of good code compression.
@@ -3711,6 +3738,115 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // --- walk the tree, calculate bounding boxes for every node
+    
+    // Inputs:
+    // - atomic counters array
+    // - binary tree data
+    // - bvh operating space with leaf boxes prefilled
+    
+    VkDeviceMemory atomic_counters_memory;
+    VkBuffer atomic_counters_buffer = CreateBuffer((worksize-1) * sizeof(u32), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                                                   vk.device, gpu_memprops,
+                                                   &atomic_counters_memory);
+    
+    VkDeviceMemory bvh_memory;
+    VkBuffer bvh_buffer = CreateBuffer((2*worksize-1) * sizeof(AABB_padded), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                                       vk.device, gpu_memprops,
+                                       &bvh_memory);
+    
+    void *bvh_mapptr;
+    vkMapMemory(vk.device, bvh_memory, 0, VK_WHOLE_SIZE, 0, &bvh_mapptr);
+    memcpy(bvh_mapptr, bvh_gpu, (2*worksize-1) * sizeof(AABB_padded));
+    
+    
+    in_struct *bvh_in = (in_struct *)calloc(1, sizeof(in_struct));
+    bvh_in->shader_file = String("../code/bvh.spv");
+    
+    bvh_in->resource_count = 3;
+    
+    bvh_in->resources = (resource_record *)calloc(bvh_in->resource_count, sizeof(resource_record));
+    bvh_in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bvh_in->resources[0].buffer = atomic_counters_buffer;
+    bvh_in->resources[0].memory = atomic_counters_memory;
+    bvh_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bvh_in->resources[1].buffer = tree_buffer;
+    bvh_in->resources[1].memory = tree_memory;
+    bvh_in->resources[2].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bvh_in->resources[2].buffer = bvh_buffer;
+    bvh_in->resources[2].memory = bvh_memory;
+    
+    
+    bvh_in->pcr_size = 1;
+    bvh_in->pcr_data = (u32 *)calloc(bvh_in->pcr_size, sizeof(u32));
+    bvh_in->pcr_data[0] = worksize;
+    
+    out_struct *bvh_out = CreateComputePipeline(bvh_in);
+    
+    
+    
+    vkUpdateDescriptorSets(vk.device, bvh_out->descwrite_count, bvh_out->descwrites, 0, NULL);
+    
+    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
+    vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, bvh_out->pipe_layout, 0, 1, &bvh_out->pipe_dset, 0, NULL);
+    vkCmdPushConstants(commandbuffer, bvh_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, bvh_in->pcr_size * sizeof(u32), bvh_in->pcr_data);
+    vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, bvh_out->pipe);
+    vkCmdDispatch(commandbuffer, blockcount, 1, 1);
+    vkEndCommandBuffer(commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &compute_si, fence);
+    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &fence);
+    
+    
+#if 0
+    s32 *atomic_counters_data = (s32 *)calloc(worksize-1, sizeof(s32));
+    
+    void *atomic_counters_mapptr;
+    vkMapMemory(vk.device, atomic_counters_memory, 0, VK_WHOLE_SIZE, 0, &atomic_counters_mapptr);
+    memcpy(atomic_counters_data, atomic_counters_mapptr, (worksize-1)*sizeof(u32));
+    vkUnmapMemory(vk.device, atomic_counters_memory);
+#endif
+    
+    
+    memcpy(bvh_gpu, bvh_mapptr, (2*worksize-1)*sizeof(AABB_padded));
+    
+    
+    // check bvh_cpu and bvh_gpu for equality
+    correct = true;
+    for(u32 i = 0; i < (worksize-1); i++)
+    {
+        if((bvh_cpu[i].lower.x != bvh_gpu[i].lower.x) ||
+           (bvh_cpu[i].lower.y != bvh_gpu[i].lower.y) ||
+           (bvh_cpu[i].lower.z != bvh_gpu[i].lower.z) ||
+           (bvh_cpu[i].upper.x != bvh_gpu[i].upper.x) ||
+           (bvh_cpu[i].upper.y != bvh_gpu[i].upper.y) ||
+           (bvh_cpu[i].upper.z != bvh_gpu[i].upper.z))
+            correct = false;
+    }
+    vkUnmapMemory(vk.device, bvh_memory);
+    
+    ODS("BVH verification: %s \n", correct ? "PASSED" : "FAILED");
+    
+#if 0
+    VkDeviceMemory bvh_memory;
+    VkBuffer bvh_buffer = CreateBuffer((2*worksize-1)*sizeof(AABB), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                                       vk.device, gpu_memprops,
+                                       &bvh_memory);
+    
+    void *;
+    vkMapMemory();
+    memcpy(mapptr, bvh_gpu, (2*worksize-1)*sizeof(AABB));
+    vkUnmapMemory(vk.device, );
+#endif
+    
+    
+    
+    
+    // - check the counters array, every element should equal to 2.
+    
     
     
     

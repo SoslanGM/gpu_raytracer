@@ -1,0 +1,61 @@
+// This one I'll do smartly, in a layered fashion; program it aspect by aspect.
+// First do a "Battle royale" of threads. See that all the threads leave when they should,
+//  and every node is only processed once.
+
+#version 460
+
+
+layout (local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+
+layout (push_constant) uniform range
+{
+    uint thread_count;
+};
+
+// is this not gonna require padding?...
+layout (std430, set = 0, binding = 0) coherent buffer _counters { int counters[]; };  // counters
+struct tree_entry
+{
+    int parent;
+    int left;
+    int right;
+    //int pad;
+};
+layout (std430, set = 0, binding = 1) coherent buffer _tree { tree_entry tree[]; };  // tree data
+// this shit will have to be padded, innit
+struct bvh_entry
+{
+    vec4 lower;
+    vec4 upper;
+};
+layout (std430, set = 0, binding = 2) coherent buffer _bvh { bvh_entry bvh[]; };  // leaf bounding volume data
+
+// starting with leaves, go up, and at each node form a new box out of the leaves' boxes.
+void main()
+{
+    uint global_index = gl_GlobalInvocationID.x;
+    // N threads start. In the end, N-1 nodes are processed.
+    if(global_index > thread_count)
+        return;
+    
+	uint node = tree[global_index+thread_count-1].parent;
+	while(true)
+	{
+        if(atomicAdd(counters[node], 1) == 0)
+            return;
+        
+        // work them boxes
+        bvh[node].lower.x = min(bvh[tree[node].left].lower.x, bvh[tree[node].right].lower.x);
+        bvh[node].lower.y = min(bvh[tree[node].left].lower.y, bvh[tree[node].right].lower.y);
+        bvh[node].lower.z = min(bvh[tree[node].left].lower.z, bvh[tree[node].right].lower.z);
+        
+        bvh[node].upper.x = max(bvh[tree[node].left].upper.x, bvh[tree[node].right].upper.x);
+        bvh[node].upper.y = max(bvh[tree[node].left].upper.y, bvh[tree[node].right].upper.y);
+        bvh[node].upper.z = max(bvh[tree[node].left].upper.z, bvh[tree[node].right].upper.z);
+        
+        
+        // go up the chain
+        node = tree[node].parent;
+	}
+}
