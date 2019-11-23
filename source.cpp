@@ -1042,12 +1042,28 @@ typedef struct
 } resource_record;
 typedef struct
 {
+    VkDescriptorType type;
+    VkImageView imageview;
+} imageresource_record;
+typedef struct
+{
     string *shader_file;
     u32 resource_count;
     resource_record *resources;
     u32 pcr_size;
     u32 *pcr_data;  // u32 or r32 isn't important, important is the size of 4 bytes
 } in_struct;
+typedef struct
+{
+    string *shader_file;
+    u32 resource_count;
+    resource_record *resources;
+    u32 imageresource_count;
+    imageresource_record *imageresources;
+    
+    u32 pcr_size;
+    u32 *pcr_data;  // u32 or r32 isn't important, important is the size of 4 bytes
+} in_struct_v2;
 typedef struct
 {
     u32 descwrite_count;
@@ -1188,6 +1204,165 @@ out_struct *CreateComputePipeline(in_struct *in)
     
     return out;
 }
+out_struct *CreateComputePipeline_v2(in_struct_v2 *in)
+{
+    out_struct *out = (out_struct *)calloc(1, sizeof(out_struct));
+    
+    // count the various descriptor types, and accordingly create descriptor pools
+    VkDescriptorPoolSize buffer_poolsize;
+    buffer_poolsize.type            = in->resources[0].type;
+    buffer_poolsize.descriptorCount = in->resource_count;
+    
+    VkDescriptorPoolSize image_poolsize;
+    image_poolsize.type            = in->imageresources[0].type;
+    image_poolsize.descriptorCount = in->imageresource_count;
+    
+    VkDescriptorPoolSize poolsizes[2] = { buffer_poolsize, image_poolsize };
+    
+    VkDescriptorPoolCreateInfo dspoolci = {};
+    dspoolci.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    dspoolci.pNext         = NULL;
+    dspoolci.flags         = 0;
+    dspoolci.maxSets       = 1;
+    dspoolci.poolSizeCount = 2;
+    dspoolci.pPoolSizes    = poolsizes;
+    result = vkCreateDescriptorPool(vk.device, &dspoolci, NULL, &out->pool);
+    char *rev = RevEnum(vk_enums.result_enum, result);
+    ODS("Compute pipeline descriptor pool creation: %s \n", rev);
+    free(rev);
+    
+    
+    VkDescriptorSetLayoutBinding *bindings = (VkDescriptorSetLayoutBinding *)calloc(in->resource_count+in->imageresource_count, sizeof(VkDescriptorSetLayoutBinding));
+    u32 running_binding_index = 0;
+    for(u32 i = 0; i < in->resource_count; i++, running_binding_index++)
+    {
+        bindings[running_binding_index].binding         = running_binding_index;
+        bindings[running_binding_index].descriptorType  = in->resources[i].type;
+        bindings[running_binding_index].descriptorCount = 1;
+        bindings[running_binding_index].stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+    
+    for(u32 i = 0; i < in->imageresource_count; i++, running_binding_index++)
+    {
+        bindings[running_binding_index].binding         = running_binding_index;
+        bindings[running_binding_index].descriptorType  = in->imageresources[i].type;
+        bindings[running_binding_index].descriptorCount = 1;
+        bindings[running_binding_index].stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+    
+    
+    
+    VkDescriptorSetLayoutCreateInfo dslayout_ci = {};
+    dslayout_ci.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    dslayout_ci.pNext        = NULL;
+    dslayout_ci.flags        = 0;
+    dslayout_ci.bindingCount = in->resource_count+in->imageresource_count;
+    dslayout_ci.pBindings    = bindings;
+    result = vkCreateDescriptorSetLayout(vk.device, &dslayout_ci, NULL, &out->pipe_dslayout);
+    char *rev1 = RevEnum(vk_enums.result_enum, result);
+    ODS("Compute pipeline descriptor set layout creation: %s \n", rev1);
+    free(rev1);
+    
+    
+    VkPipelineLayoutCreateInfo layout_ci = {};
+    layout_ci.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layout_ci.pNext                  = NULL;
+    layout_ci.flags                  = 0;
+    layout_ci.setLayoutCount         = 1;
+    layout_ci.pSetLayouts            = &out->pipe_dslayout;
+    if(in->pcr_size > 0)
+    {
+        VkPushConstantRange pcr = {};
+        pcr.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        pcr.offset     = 0;
+        pcr.size       = in->pcr_size * sizeof(u32);
+        
+        layout_ci.pushConstantRangeCount = 1;
+        layout_ci.pPushConstantRanges    = &pcr;
+    }
+    else
+    {
+        layout_ci.pushConstantRangeCount = 0;
+        layout_ci.pPushConstantRanges    = NULL;
+    }
+    result = vkCreatePipelineLayout(vk.device, &layout_ci, NULL, &out->pipe_layout);
+    char *rev2 = RevEnum(vk_enums.result_enum, result);
+    ODS("Compute pipeline layout creation: %s \n", rev2);
+    free(rev2);
+    
+    
+    
+    out->module = GetShaderModule(in->shader_file->ptr);
+    
+    VkPipelineShaderStageCreateInfo stage = {};
+    stage.sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stage.pNext               = NULL;
+    stage.flags               = 0;
+    stage.stage               = VK_SHADER_STAGE_COMPUTE_BIT;
+    stage.module              = out->module;
+    stage.pName               = "main";
+    
+    VkComputePipelineCreateInfo ci = {};
+    ci.sType              = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    ci.pNext              = NULL;
+    ci.flags              = 0;
+    ci.stage              = stage;
+    ci.layout             = out->pipe_layout;
+    vkCreateComputePipelines(vk.device, NULL, 1, &ci, NULL, &out->pipe);
+    
+    
+    
+    VkDescriptorSetAllocateInfo dsai = {};
+    dsai.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    dsai.pNext              = NULL;
+    dsai.descriptorPool     = out->pool;
+    dsai.descriptorSetCount = 1;
+    dsai.pSetLayouts        = &out->pipe_dslayout;
+    result = vkAllocateDescriptorSets(vk.device, &dsai, &out->pipe_dset);
+    char *rev3 = RevEnum(vk_enums.result_enum, result);
+    ODS("Descriptor set allocation: %s \n", rev3);
+    free(rev3);
+    
+    out->descwrite_count = in->resource_count + in->imageresource_count;
+    out->descwrites = (VkWriteDescriptorSet *)calloc(out->descwrite_count, sizeof(VkWriteDescriptorSet));
+    u32 descwrite_runningindex = 0;
+    for(u32 i = 0; i < in->resource_count; i++, descwrite_runningindex++)
+    {
+        VkDescriptorBufferInfo *bi = (VkDescriptorBufferInfo *)calloc(1, sizeof(VkDescriptorBufferInfo));
+        bi->buffer = in->resources[descwrite_runningindex].buffer;
+        bi->offset = 0;
+        bi->range  = VK_WHOLE_SIZE;
+        
+        out->descwrites[descwrite_runningindex].sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        out->descwrites[descwrite_runningindex].pNext            = NULL;
+        out->descwrites[descwrite_runningindex].dstSet           = out->pipe_dset;
+        out->descwrites[descwrite_runningindex].dstBinding       = descwrite_runningindex;
+        out->descwrites[descwrite_runningindex].dstArrayElement  = 0;
+        out->descwrites[descwrite_runningindex].descriptorCount  = 1;
+        out->descwrites[descwrite_runningindex].descriptorType   = in->resources[i].type;
+        out->descwrites[descwrite_runningindex].pBufferInfo      = bi;
+    }
+    
+    for(u32 i = 0; i < in->imageresource_count; i++, descwrite_runningindex++)
+    {
+        VkDescriptorImageInfo *ii = (VkDescriptorImageInfo *)calloc(1, sizeof(VkDescriptorImageInfo));
+        ii->sampler     = NULL;
+        ii->imageView   = in->imageresources[i].imageview;
+        ii->imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        
+        out->descwrites[descwrite_runningindex].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        out->descwrites[descwrite_runningindex].pNext           = NULL;
+        out->descwrites[descwrite_runningindex].dstSet          = out->pipe_dset;
+        out->descwrites[descwrite_runningindex].dstBinding      = descwrite_runningindex;
+        out->descwrites[descwrite_runningindex].dstArrayElement = 0;
+        out->descwrites[descwrite_runningindex].descriptorCount = 1;
+        out->descwrites[descwrite_runningindex].descriptorType  = in->imageresources[i].type;
+        out->descwrites[descwrite_runningindex].pImageInfo      = ii;
+    }
+    
+    return out;
+}
+
 
 void CleanPipeline(out_struct *out)
 {
@@ -1225,6 +1400,17 @@ typedef struct
 
 typedef struct
 {
+    r32 x, y, z;
+    u32 pad;
+} vertex3_padded;
+typedef struct
+{
+    vertex3_padded lower;
+    vertex3_padded upper;
+} AABB_padded;  // GPU-side
+
+typedef struct
+{
     //s32 d;
     //s32 delta_min;
     //s32 delta_node;
@@ -1243,19 +1429,145 @@ typedef struct
     s32 pad;
 } tree_entry_padded;
 
-/*
-AABB GetAABB(tree_entry *tree, u32 node)
+typedef struct 
 {
-    AABB result;
+    vertex3 o;
+    vertex3 d;
+    r32 t;
+} ray;
+
+r32 t_min = 0.001f;
+r32 t_max = 1000.0f;
+
+// RayPlane() would be some form of the plan equation, probably coefficients.
+bool RayBox(ray r, AABB_padded b, r32 *t_result)
+{
+    bool result = false;
     
-    AABB left = tree[node.left].
+    // check against the six planes; pick one coord, defining an axis-aligned plane, 
+    // first plane: zmin.
+    r32 x_min = b.lower.x;
+    r32 x_max = b.upper.x;
+    r32 y_min = b.lower.y;
+    r32 y_max = b.upper.y;
+    r32 z_min = b.lower.z;
+    r32 z_max = b.upper.z;
     
+    u32 t_counter = 0;
+    r32 t_values[6];
+    
+    
+    // x_min
+    r32 t = (x_min - r.o.x)/r.d.x;
+    if((t_min < t) && (t < t_max))
+    {
+        r32 py = r.o.y + t * r.d.y;
+        r32 pz = r.o.z + t * r.d.z;
+        
+        // check bounds
+        if(((b.lower.y < py)&&(py < b.upper.y)) &&
+           ((b.lower.z < pz)&&(pz < b.upper.z)))
+        {
+            t_values[t_counter++] = t;
+        }
+    }
+    
+    // x_max
+    t = (x_max - r.o.x)/r.d.x;
+    if((t_min < t) && (t < t_max))
+    {
+        r32 py = r.o.y + t * r.d.y;
+        r32 pz = r.o.z + t * r.d.z;
+        
+        // check bounds
+        if(((b.lower.x < py)&&(py < b.upper.y)) &&
+           ((b.lower.y < pz)&&(pz < b.upper.z)))
+        {
+            t_values[t_counter++] = t;
+        }
+    }
+    
+    
+    // y_min
+    t = (y_min - r.o.y)/r.d.y;
+    if((t_min < t) && (t < t_max))
+    {
+        r32 px = r.o.x + t * r.d.x;
+        r32 pz = r.o.z + t * r.d.z;
+        
+        // check bounds
+        if(((b.lower.x < px)&&(px < b.upper.x)) &&
+           ((b.lower.z < pz)&&(pz < b.upper.z)))
+        {
+            t_values[t_counter++] = t;
+        }
+    }
+    
+    // y_max
+    t = (y_max - r.o.y)/r.d.y;
+    if((t_min < t) && (t < t_max))
+    {
+        r32 px = r.o.x + t * r.d.x;
+        r32 pz = r.o.z + t * r.d.z;
+        
+        // check bounds
+        if(((b.lower.x < px)&&(px < b.upper.x)) &&
+           ((b.lower.z < pz)&&(pz < b.upper.z)))
+        {
+            t_values[t_counter++] = t;
+        }
+    }
+    
+    
+    // z_min
+    t = (z_min - r.o.z)/r.d.z;
+    if((t_min < t) && (t < t_max))
+    {
+        r32 px = r.o.x + t * r.d.x;
+        r32 py = r.o.y + t * r.d.y;
+        
+        // check bounds
+        if(((b.lower.x < px)&&(px < b.upper.x)) &&
+           ((b.lower.y < py)&&(py < b.upper.y)))
+        {
+            t_values[t_counter++] = t;
+        }
+    }
+    
+    // z_max
+    t = (z_max - r.o.z)/r.d.z;
+    if((t_min < t) && (t < t_max))
+    {
+        r32 px = r.o.x + t * r.d.x;
+        r32 py = r.o.y + t * r.d.y;
+        
+        // check bounds
+        if(((b.lower.x < px)&&(px < b.upper.x)) &&
+           ((b.lower.y < py)&&(py < b.upper.y)))
+        {
+            t_values[t_counter++] = t;
+        }
+    }
+    
+    
+    r32 minimal_t = t_max;
+    
+    // now look through the values and select the minimal
+    for(u32 i = 0; i < t_counter; i++)
+    {
+        if(minimal_t > t_values[i])
+            minimal_t = t_values[i];
+    }
+    
+    if(t_counter > 0)
+    {
+        result = true;
+        *t_result = minimal_t;
+    }
     return result;
 }
-*/
 
-
-#define RD 0
+#define RD 0 
 
 int CALLBACK WinMain(HINSTANCE instance,
                      HINSTANCE prevInstance,
@@ -1895,16 +2207,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // === Step 2: Go through all the triangles, calculate centroids, assign Morton codes.
-    typedef struct
-    {
-        r32 x, y, z;
-        u32 pad;
-    } vertex3_padded;
-    typedef struct
-    {
-        vertex3_padded lower;
-        vertex3_padded upper;
-    } AABB_padded;  // GPU-side
+    
     typedef struct
     {
         vertex3 cen;
@@ -3829,39 +4132,113 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     ODS("BVH verification: %s \n", correct ? "PASSED" : "FAILED");
     
-#if 0
-    VkDeviceMemory bvh_memory;
-    VkBuffer bvh_buffer = CreateBuffer((2*worksize-1)*sizeof(AABB), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-                                       vk.device, gpu_memprops,
-                                       &bvh_memory);
     
-    void *;
-    vkMapMemory();
-    memcpy(mapptr, bvh_gpu, (2*worksize-1)*sizeof(AABB));
-    vkUnmapMemory(vk.device, );
+    
+    // fool with compaction later? I wonder though if it's not compact already.
+    
+    
+    
+    
+    // What's left to do now...
+    // - launch rays. From every pixel, or rather, from a camera a ray is shot at every pixel.
+    //    It hits boxes, checks for collision and then looks at the children of the box.
+    //    If 
+    
+    // inputs and outputs- I should say, resources:
+    // - tree
+    // - boxes
+    // - index and vertex data
+    // - image
+    
+    
+    // experiment with ray-box here
+    vertex3 origin;
+    origin.x = 0.0f;
+    origin.y = 0.0f;
+    origin.z = -10.0f;
+    
+    vertex3 direction;
+    direction.x = 0.0f;
+    direction.y = 0.0f;
+    direction.z = 1.0f;
+    
+    ray r;
+    r.o.x = origin.x;
+    r.o.y = origin.y;
+    r.o.z = origin.z;
+    r.d.x = direction.x;
+    r.d.y = direction.y;
+    r.d.z = direction.z;
+    
+    r32 t;
+    bool intersection = RayBox(r, bvh_gpu[0], &t);
+    
+    r32 inter_x = r.o.x + t * r.d.x;
+    r32 inter_y = r.o.y + t * r.d.y;
+    r32 inter_z = r.o.z + t * r.d.z;
+    
+    if(intersection)
+    {
+        ODS("Intersection with the global aabb at (%7.4f,%7.4f,%7.4f ), t=%7.4f \n", inter_x,inter_y,inter_z, t);
+    }
+    else
+    {
+        ODS("No intersection with the global aabb \n");
+    }
+    
+    
+    //exit(0);
+    
+#if 1
+    
+    in_struct_v2 *ray_in = (in_struct_v2 *)calloc(1, sizeof(in_struct_v2));
+    ray_in->shader_file = String("../code/raytrace.spv");
+    
+    ray_in->resource_count = 4;
+    
+    ray_in->resources = (resource_record *)calloc(ray_in->resource_count, sizeof(resource_record));
+    ray_in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    ray_in->resources[0].memory = tree_memory;
+    ray_in->resources[0].buffer = tree_buffer;
+    ray_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    ray_in->resources[1].memory = bvh_memory;
+    ray_in->resources[1].buffer = bvh_buffer;
+    ray_in->resources[2].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    ray_in->resources[2].memory = model_index_memory;
+    ray_in->resources[2].buffer = model_index_buffer;
+    ray_in->resources[3].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    ray_in->resources[3].memory = model_vertex_memory;
+    ray_in->resources[3].buffer = model_vertex_buffer;
+    
+    
+    
+    ray_in->imageresource_count = 1;
+    ray_in->imageresources = (imageresource_record *)calloc(ray_in->imageresource_count, sizeof(imageresource_record));
+    ray_in->imageresources[0].type      = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    ray_in->imageresources[0].imageview = computed_imageview;
+    
+    out_struct *ray_out = CreateComputePipeline_v2(ray_in);
+    
+    
+    
+    
+    
+    u32 xdim = ceil(r32(app.window_width)  / 32.0f);
+    u32 ydim = ceil(r32(app.window_height) / 32.0f);
+    
+    vkUpdateDescriptorSets(vk.device, ray_out->descwrite_count, ray_out->descwrites, 0, NULL);
+    
+    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
+    vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, ray_out->pipe_layout, 0, 1, &ray_out->pipe_dset, 0, NULL);
+    vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, ray_out->pipe);
+    vkCmdDispatch(commandbuffer, xdim, ydim, 1);
+    vkEndCommandBuffer(commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &compute_si, fence);
+    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &fence);
+    
 #endif
-    
-    
-    
-    
-    // - check the counters array, every element should equal to 2.
-    
-    
-    
-    
-    
-    // --- tree compaction is a locality improvement. Fool around with it if you want, but it's probably not important for a monkey.
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    exit(0);
     
     
     // ---
@@ -4260,7 +4637,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     vertex quad[] = { v0, v1, v2, v3 };
     
     VkDeviceMemory vertex_memory;
-    VkBuffer vertex_buffer = CreateBuffer(sizeof(quad) * sizeof(vertex) * sizeof(float),  // 4 * 5 *
+    VkBuffer vertex_buffer = CreateBuffer(4 * 5 * sizeof(float),  // 4 * 5 *
                                           VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                           vk.device,
@@ -4269,13 +4646,13 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     void *vertex_mapptr;
     vkMapMemory(vk.device, vertex_memory, 0, VK_WHOLE_SIZE, 0, &vertex_mapptr);
-    memcpy(vertex_mapptr, quad, sizeof(float) * sizeof(vertex) * sizeof(quad));  // * 5 * 4
+    memcpy(vertex_mapptr, quad, 5 * 4 * sizeof(float));  // * 5 * 4
     vkUnmapMemory(vk.device, vertex_memory);
     
     
     u32 indexes[] = { 0, 1, 2, 1, 3, 2 };
     VkDeviceMemory index_memory;
-    VkBuffer index_buffer = CreateBuffer(sizeof(indexes) * sizeof(u32),  // 6 *
+    VkBuffer index_buffer = CreateBuffer(6 * sizeof(u32),  // 6 *
                                          VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                          vk.device,

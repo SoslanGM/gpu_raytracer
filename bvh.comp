@@ -20,14 +20,13 @@ struct tree_entry
     int parent;
     int left;
     int right;
-    //int pad;
 };
 layout (std430, set = 0, binding = 1) coherent buffer _tree { tree_entry tree[]; };  // tree data
-// this shit will have to be padded, innit
+// padded - vec4, not vec3
 struct bvh_entry
 {
-    vec4 lower;
-    vec4 upper;
+    vec4 lower;  // every 4th value
+    vec4 upper;  //  is padding
 };
 layout (std430, set = 0, binding = 2) coherent buffer _bvh { bvh_entry bvh[]; };  // leaf bounding volume data
 
@@ -53,7 +52,6 @@ void main()
         bvh[node].upper.x = max(bvh[tree[node].left].upper.x, bvh[tree[node].right].upper.x);
         bvh[node].upper.y = max(bvh[tree[node].left].upper.y, bvh[tree[node].right].upper.y);
         bvh[node].upper.z = max(bvh[tree[node].left].upper.z, bvh[tree[node].right].upper.z);
-        
         
         // go up the chain
         node = tree[node].parent;

@@ -1,0 +1,227 @@
+#version 460
+
+#define WIDTH 1280
+#define HEIGHT 720
+
+layout (local_size_x = 32, local_size_y = 32, local_size_z = 1) in;  // I wonder what's the difference gonna be with 32,1,1. 
+
+// why is this ok without padding?
+struct tree_entry
+{
+    int parent;
+    int left;
+    int right;
+};
+layout (std430, set = 0, binding = 0) coherent buffer _tree  { tree_entry tree[];  };
+struct bvh_entry
+{
+    vec4 lower;
+    vec4 upper;
+};
+layout (std430, set = 0, binding = 1) coherent buffer _bvh      { bvh_entry bvh[];      };
+layout (std430, set = 0, binding = 2) coherent buffer _indexes  { uint      indexes[];  };
+layout (std430, set = 0, binding = 3) coherent buffer _vertexes { float     vertexes[]; };
+layout (set = 0, binding = 4, rgba8) uniform image2D im;
+
+
+float t_min = 0.0001;
+float t_max = 1000.0;
+
+
+// ray v0: yes or no.
+// ray v1: t.
+
+// if the big box isn't hit, skip.
+// otherwise keep checking for intersections.
+
+#if 0
+struct triangle
+{
+    vec3 v0;
+    vec3 v1;
+    vec3 v2;
+};
+triangle RetrieveTriangle(uint triangle_index)
+{
+    
+}
+#endif
+
+struct ray
+{
+    vec3 o;
+    vec3 d;
+};
+
+struct plane
+{
+    vec3 n;
+    vec3 d;
+};
+
+
+float RayBox(ray r, bvh_entry b)
+{
+    // two categories of hits: parallel and not.
+    // second then subdivides into is it on the side of the box or somewhere in space.
+    
+    // test against all 6 planes, then pick the smallest across t_min < t < t_max.
+    float x_min = b.lower.x;
+    float x_max = b.upper.x;
+    float y_min = b.lower.y;
+    float y_max = b.upper.y;
+    float z_min = b.lower.z;
+    float z_max = b.upper.z;
+    
+    uint t_counter = 0;
+    float t_values[6];
+    
+    
+    // x_min
+    float t = (x_min - r.o.x)/r.d.x;
+    if((t_min < t) && (t < t_max))
+    {
+        float py = r.o.y + t * r.d.y;
+        float pz = r.o.z + t * r.d.z;
+        
+        // check bounds
+        if(((b.lower.y < py)&&(py < b.upper.y)) &&
+           ((b.lower.z < pz)&&(pz < b.upper.z)))
+        {
+            t_values[t_counter++] = t;
+        }
+    }
+    
+    // x_max
+    t = (x_max - r.o.x)/r.d.x;
+    if((t_min < t) && (t < t_max))
+    {
+        float py = r.o.y + t * r.d.y;
+        float pz = r.o.z + t * r.d.z;
+        
+        // check bounds
+        if(((b.lower.y < py)&&(py < b.upper.y)) &&
+           ((b.lower.z < pz)&&(pz < b.upper.z)))
+        {
+            t_values[t_counter++] = t;
+        }
+    }
+    
+    
+    // y_min
+    t = (y_min - r.o.y)/r.d.y;
+    if((t_min < t) && (t < t_max))
+    {
+        float px = r.o.x + t * r.d.x;
+        float pz = r.o.z + t * r.d.z;
+        
+        // check bounds
+        if(((b.lower.x < px)&&(px < b.upper.x)) &&
+           ((b.lower.z < pz)&&(pz < b.upper.z)))
+        {
+            t_values[t_counter++] = t;
+        }
+    }
+    
+    // y_max
+    t = (y_max - r.o.y)/r.d.y;
+    if((t_min < t) && (t < t_max))
+    {
+        float px = r.o.x + t * r.d.x;
+        float pz = r.o.z + t * r.d.z;
+        
+        // check bounds
+        if(((b.lower.x < px)&&(px < b.upper.x)) &&
+           ((b.lower.z < pz)&&(pz < b.upper.z)))
+        {
+            t_values[t_counter++] = t;
+        }
+    }
+    
+    
+    // z_min
+    t = (z_min - r.o.z)/r.d.z;
+    if((t_min < t) && (t < t_max))
+    {
+        float px = r.o.x + t * r.d.x;
+        float py = r.o.y + t * r.d.y;
+        
+        // check bounds
+        if(((b.lower.x < px)&&(px < b.upper.x)) &&
+           ((b.lower.y < py)&&(py < b.upper.y)))
+        {
+            t_values[t_counter++] = t;
+        }
+    }
+    
+    // z_max
+    t = (z_max - r.o.z)/r.d.z;
+    if((t_min < t) && (t < t_max))
+    {
+        float px = r.o.x + t * r.d.x;
+        float py = r.o.y + t * r.d.y;
+        
+        // check bounds
+        if(((b.lower.x < px)&&(px < b.upper.x)) &&
+           ((b.lower.y < py)&&(py < b.upper.y)))
+        {
+            t_values[t_counter++] = t;
+        }
+    }
+    
+    
+    float minimal_t = t_max;
+    
+    // now look through the values and select the minimal
+    for(uint i = 0; i < t_counter; i++)
+    {
+        if(minimal_t > t_values[i])
+            minimal_t = t_values[i];
+    }
+    
+    if(t_counter > 0)
+        return minimal_t;
+    else
+        return t_max;
+}
+
+void main()
+{
+    if(gl_GlobalInvocationID.x > WIDTH || gl_GlobalInvocationID.y > HEIGHT)
+        return;
+    
+    vec2 screen_coord = gl_GlobalInvocationID.xy;
+    //uint stack[32];  // I wonder how deep it should be?
+    
+#if 0    
+    vec4 debug_color = vec4(0.5, 0.2, 0.35, 1.0);
+    imageStore(im, ivec2(screen_coord), debug_color);
+#endif
+#if 1
+    // if ray intersects box of the root, check its children
+    vec4 sky_color    = vec4(0.8, 0.1, 0.1, 1.0);
+    vec4 monkey_color = vec4(0.1, 0.8, 0.8, 1.0);
+    
+    
+    float cam_x = -4.0;
+    float cam_y = -4.0;
+    float cam_z = -10.0;
+    
+    ray r;
+    r.o = vec3(cam_x, cam_y, cam_z);
+    r.d = vec3(screen_coord, t_max);
+    
+    
+    
+    vec4 color = sky_color;
+    //uint stack_counter = 0;
+    
+    float t = RayBox(r, bvh[0]);
+    
+    if((t_min < t) && (t < t_max))
+        imageStore(im, ivec2(screen_coord), monkey_color);
+    else
+        imageStore(im, ivec2(screen_coord), sky_color);
+#endif
+    
+}
