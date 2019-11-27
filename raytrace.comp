@@ -5,6 +5,11 @@
 
 layout (local_size_x = 32, local_size_y = 32, local_size_z = 1) in;  // I wonder what's the difference gonna be with 32,1,1. 
 
+layout (push_constant) uniform range
+{
+    int node_count;
+};
+
 // why is this ok without padding?
 struct tree_entry
 {
@@ -26,7 +31,11 @@ layout (set = 0, binding = 4, rgba8) uniform image2D im;
 
 float t_min = 0.0001;
 float t_max = 1000.0;
+float t_current = t_max;
 
+vec4 sky_color    = vec4(1.0, 0.92, 0.77, 1.0);
+vec4 monkey_color = vec4(0.2, 0.5,  1.0,  1.0);
+vec4 light_color  = vec4(1.0, 1.0,  1.0,  1.0);
 
 // ray v0: yes or no.
 // ray v1: t.
@@ -52,13 +61,6 @@ struct ray
     vec3 o;
     vec3 d;
 };
-
-struct plane
-{
-    vec3 n;
-    vec3 d;
-};
-
 
 float RayBox(ray r, bvh_entry b)
 {
@@ -185,43 +187,192 @@ float RayBox(ray r, bvh_entry b)
         return t_max;
 }
 
+#define within(t) ((t_min < t) && (t < t_max))
+
+struct poly
+{
+    vec3 v0;
+    vec3 v1;
+    vec3 v2;
+};
+
+poly FetchTri(int index)
+{
+    poly p;
+    
+    uint i0 = indexes[3 * index];
+    uint i1 = indexes[3 * index + 1];
+    uint i2 = indexes[3 * index + 2];
+    
+    
+    p.v0.x = vertexes[8 * i0];
+    p.v0.y = vertexes[8 * i0 + 1];
+    p.v0.z = vertexes[8 * i0 + 2];
+    
+    p.v1.x = vertexes[8 * i1];
+    p.v1.y = vertexes[8 * i1 + 1];
+    p.v1.z = vertexes[8 * i1 + 2];
+    
+    p.v2.x = vertexes[8 * i2];
+    p.v2.y = vertexes[8 * i2 + 1];
+    p.v2.z = vertexes[8 * i2 + 2];
+    
+    return p;
+}
+
+
+
+float cam_x = -3.0;
+float cam_y = -2.0;
+float cam_z = -5.0;
+
+
+int stack_counter = 0;
+shared int stack[1000];
+
+// what do you return?
+struct tri_record
+{
+    float t;
+    vec3 n;
+};
+tri_record RayTri(ray r, poly tri)
+{
+    tri_record rec;
+    
+    vec3 normal = normalize(cross(tri.v1-tri.v0, tri.v2-tri.v0));
+    
+#if 1
+    if(dot(r.d, normal) == 0)
+    {
+        rec.t = t_max;
+        rec.n = normal;
+        return rec;
+    }
+#endif
+    
+    // get the plane
+    float d = dot(normal, tri.v0);
+    // Now we have the d of the plane and the normal of the plane...
+    // Should we pass the sought point's coords into the equation?
+    
+    float normal_dot_origin = dot(normal, r.o);  // this is very weird
+    float t_star = (d - normal_dot_origin) / (dot(normal, tri.v0) - normal_dot_origin);
+    
+    rec.t = t_star;
+    rec.n = normal;
+    
+    // get the triangle
+    
+    return rec;
+}
+
+struct hit_record
+{
+    float t;
+    // vec3 normal;
+    vec4 color;
+};
+hit_record Trace(ray r, int node)
+{
+    while(node < node_count)
+    {
+        int left  = tree[node].left;
+        int right = tree[node].right;
+        
+        float left_t  = RayBox(r, bvh[left]);
+        float right_t = RayBox(r, bvh[right]);
+        bool left_hit  = (left_t < t_max)  ? true : false;
+        bool right_hit = (right_t < t_max) ? true : false;
+        
+        if(left_hit)
+        {
+            node = left;
+            if(right_hit)
+                stack[stack_counter++] = right;
+        }
+        else
+        {
+            if(right_hit)
+                node = right;
+            else
+            {
+                hit_record h;
+                h.t = t_max;
+                return h;  // if you miss both children, time to go to next entry.
+            }
+        }
+    }
+    
+    // now we're dealing with a triangle
+    int leaf_index = node - node_count;
+    
+    poly tri = FetchTri(leaf_index);
+    tri_record rec = RayTri(r, tri);
+    
+    vec3 light_dir = normalize(vec3(cam_x, cam_y, cam_z));
+    
+    vec3 n = normalize(rec.n);
+    float diffuse_coeff = max(dot(n, normalize(light_dir)), 0.0);
+    vec3 diffuse = diffuse_coeff * light_color.rgb;
+    
+    hit_record h;
+    h.t = rec.t;
+    
+    h.color = vec4(monkey_color.rgb * diffuse, 1.0);
+    //h.color = monkey_color;
+    
+    return h;
+}
+
+
 void main()
 {
     if(gl_GlobalInvocationID.x > WIDTH || gl_GlobalInvocationID.y > HEIGHT)
         return;
     
-    vec2 screen_coord = gl_GlobalInvocationID.xy;
-    //uint stack[32];  // I wonder how deep it should be?
-    
-#if 0    
-    vec4 debug_color = vec4(0.5, 0.2, 0.35, 1.0);
-    imageStore(im, ivec2(screen_coord), debug_color);
-#endif
-#if 1
-    // if ray intersects box of the root, check its children
-    vec4 sky_color    = vec4(0.8, 0.1, 0.1, 1.0);
-    vec4 monkey_color = vec4(0.1, 0.8, 0.8, 1.0);
+    vec2 screen_coord = vec2(gl_GlobalInvocationID.x, HEIGHT-gl_GlobalInvocationID.y);
     
     
-    float cam_x = -4.0;
-    float cam_y = -4.0;
-    float cam_z = -10.0;
+    // orange - 1r 0.5g 0.17b
+    // sky blue .77r .92g 1b
+    
     
     ray r;
     r.o = vec3(cam_x, cam_y, cam_z);
     r.d = vec3(screen_coord, t_max);
     
-    
+    // This will trace only the left triangles. ...which means the leftmost leaf.
+    int node = 0;
     
     vec4 color = sky_color;
-    //uint stack_counter = 0;
     
-    float t = RayBox(r, bvh[0]);
+    int root = 0;
+    hit_record h = Trace(r, root);
+    if(within(h.t) && (h.t < t_current))
+        //if(h.t < t_current)
+    {
+        t_current = h.t;
+        color = h.color;
+    }
     
-    if((t_min < t) && (t < t_max))
-        imageStore(im, ivec2(screen_coord), monkey_color);
-    else
-        imageStore(im, ivec2(screen_coord), sky_color);
-#endif
+    // there's now maybe something in the stack, and maybe a single hit record 
+    while(stack_counter > 0)
+    {
+        hit_record h = Trace(r, stack[--stack_counter]);
+        if(within(h.t) && (h.t < t_current))
+            //if(h.t < t_current)
+        {
+            t_current = h.t;
+            color = h.color;
+        }
+    }
     
+    // * The time to pop the stack is once you hit the leaf. (node = stack[--stack_counter])
+    // * The time to assign the running t value is once you get the t value of RayTri.
+    
+    // Now the node is -1, and stack is empty.
+    // And we should have our final t value.
+    
+    imageStore(im, ivec2(screen_coord), color);
 }

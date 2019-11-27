@@ -4187,9 +4187,99 @@ int CALLBACK WinMain(HINSTANCE instance,
     }
     
     
-    //exit(0);
     
-#if 1
+    
+    
+    // experiment with ray traversal
+#if 0
+    u32 stack_counter = 0;
+    s32 stack[100];
+    u32 stack_max;
+    
+    r32 t_current;
+    for(r32 i = 0.0f; i < 720.0f; i+=1.0f)
+    {
+        for(r32 j = 0.0f; j < 1280.0f; j+=1.0f)
+        {
+            ray r;
+            r.o.x = 0.0f;
+            r.o.y = 0.0f;
+            r.o.z = -10.0f;
+            r.d.x = j;
+            r.d.y = i;
+            r.d.z = t_max;
+            
+            int node = 0;  // root
+            t_current = t_max;
+            stack_max = 0;
+            while( !((node == -1) && (stack_counter == 0)) )
+            {
+                //ODS("Operating node %d \n", node);
+                
+                int left  = tree_data[node].left;
+                int right = tree_data[node].right;
+                
+                // if both are hit, go left, and push right onto stack.
+                // if only one is hit, go there.
+                r32 t_left, t_right;
+                bool inter_left  = RayBox(r, bvh_cpu[left],  &t_left);
+                bool inter_right = RayBox(r, bvh_cpu[right], &t_right);
+                
+                if(inter_left && inter_right)
+                {
+                    //ODS("Ray d(%+-7.4f %+-7.4f %+-7.4f) intersected both children \n", r.d.x, r.d.y, r.d.z);
+                    if(min(t_left, t_right) < t_current)
+                        t_current = min(t_left, t_right);
+                    
+                    node = left;
+                    stack[stack_counter++] = right;
+                    if(stack_max < stack_counter)
+                        stack_max = stack_counter;
+                    if(stack_counter > 100)
+                    {
+                        //ODS("Stack exceeded. Terminating \n");
+                        exit(0);
+                    }
+                    //ODS("Pushing node %d onto stack \n", right);
+                }
+                
+                if(inter_left && !inter_right)
+                {
+                    //ODS("Ray d(%+-7.4f %+-7.4f %+-7.4f) intersected left \n", r.d.x, r.d.y, r.d.z);
+                    if(t_left < t_current)
+                        t_current = t_left;
+                    node = left;
+                }
+                if(!inter_left && inter_right)
+                {
+                    //ODS("Ray d(%+-7.4f %+-7.4f %+-7.4f) intersected right \n", r.d.x, r.d.y, r.d.z);
+                    if(t_right < t_current)
+                        t_current = t_right;
+                    node = right;
+                }
+                
+                if(!inter_left && !inter_right)
+                {
+                    if(stack_counter > 0)
+                    {
+                        //ODS("Popping stack \n");
+                        stack_counter--;
+                        node = stack[stack_counter];
+                    }
+                    else
+                    {
+                        if((t_min < t_current) && (t_current < t_max))
+                            ODS("t %+-7.4f at ray d(%+-7.4f %+-7.4f %+-7.4f). Max stack size %d. Moving on \n", t_current, r.d.x, r.d.y, r.d.z, stack_max);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+#endif
+    
+    
+    //exit(0);
     
     in_struct_v2 *ray_in = (in_struct_v2 *)calloc(1, sizeof(in_struct_v2));
     ray_in->shader_file = String("../code/raytrace.spv");
@@ -4210,12 +4300,14 @@ int CALLBACK WinMain(HINSTANCE instance,
     ray_in->resources[3].memory = model_vertex_memory;
     ray_in->resources[3].buffer = model_vertex_buffer;
     
-    
-    
     ray_in->imageresource_count = 1;
     ray_in->imageresources = (imageresource_record *)calloc(ray_in->imageresource_count, sizeof(imageresource_record));
     ray_in->imageresources[0].type      = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     ray_in->imageresources[0].imageview = computed_imageview;
+    
+    ray_in->pcr_size = 1;
+    ray_in->pcr_data = (u32 *)calloc(bvh_in->pcr_size, sizeof(u32));
+    ray_in->pcr_data[0] = worksize-1;
     
     out_struct *ray_out = CreateComputePipeline_v2(ray_in);
     
@@ -4238,7 +4330,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
     vkResetFences(vk.device, 1, &fence);
     
-#endif
     
     
     // ---
