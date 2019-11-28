@@ -228,7 +228,7 @@ float cam_z = -5.0;
 
 
 int stack_counter = 0;
-shared int stack[1000];
+int stack[100];
 
 // what do you return?
 struct tri_record
@@ -242,17 +242,15 @@ tri_record RayTri(ray r, poly tri)
     
     vec3 normal = normalize(cross(tri.v1-tri.v0, tri.v2-tri.v0));
     
-#if 1
     if(dot(r.d, normal) == 0)
     {
         rec.t = t_max;
         rec.n = normal;
         return rec;
     }
-#endif
     
     // get the plane
-    float d = dot(normal, tri.v0);
+    float d = -dot(normal, tri.v0);
     // Now we have the d of the plane and the normal of the plane...
     // Should we pass the sought point's coords into the equation?
     
@@ -262,7 +260,26 @@ tri_record RayTri(ray r, poly tri)
     rec.t = t_star;
     rec.n = normal;
     
-    // get the triangle
+#if 0
+    vec3 point = r.o + r.d * t_star;
+    
+    float det_m = determinant(mat3(tri.v0, tri.v1, tri.v2));
+    float det_a = determinant(mat3(point,  tri.v1, tri.v2));
+    float det_b = determinant(mat3(tri.v0, point,  tri.v2));
+    float det_c = determinant(mat3(tri.v0, tri.v1, point));
+    
+    float a = det_a / det_m;
+    float b = det_b / det_m;
+    float c = det_c / det_m;
+    
+    bool inside = true;
+    if((a < 0) || (b < 0) || (c < 0))
+        inside = false;
+    
+    rec.n = normal;
+    rec.t = (inside) ? t_star : t_max;
+#endif
+    
     
     return rec;
 }
@@ -310,7 +327,7 @@ hit_record Trace(ray r, int node)
     poly tri = FetchTri(leaf_index);
     tri_record rec = RayTri(r, tri);
     
-    vec3 light_dir = normalize(vec3(cam_x, cam_y, cam_z));
+    vec3 light_dir = normalize(vec3(-cam_x, -cam_y, -cam_z));
     
     vec3 n = normalize(rec.n);
     float diffuse_coeff = max(dot(n, normalize(light_dir)), 0.0);
@@ -374,5 +391,5 @@ void main()
     // Now the node is -1, and stack is empty.
     // And we should have our final t value.
     
-    imageStore(im, ivec2(screen_coord), color);
+    imageStore(im, ivec2(screen_coord.x, HEIGHT-screen_coord.y), color);
 }
