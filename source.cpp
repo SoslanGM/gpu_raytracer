@@ -2249,7 +2249,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         step2_cpu[i].cen.z = cen_z;
         
         // map to [0;1023], calculate the Morton code
-        r32 new_range = 1023.0f;
+        r32 new_range = 1024.0f;  // DANGER: if coord components are 1, we're fucked 
         u32 morton_x = (u32)floor((cen_x+abs(x_min))*(new_range/x_range));
         u32 morton_y = (u32)floor((cen_y+abs(y_min))*(new_range/y_range));
         u32 morton_z = (u32)floor((cen_z+abs(z_min))*(new_range/z_range));
@@ -3732,10 +3732,35 @@ int CALLBACK WinMain(HINSTANCE instance,
     }
     ODS("Tree construction verification: %s \n", correct ? "PASSED" : "FAILED");
     
+    //ODS("Look at the tree here \n");
     
-    ODS("Look at the tree here \n");
-    //exit(0);
     
+    // check to see if there's a lost leaf or if index assignment is incorrect
+#if 0    
+    
+    u32 node_count = worksize-1;
+    u32 last_node_index = node_count-1;
+    u32 *leaf_counters = (u32 *)calloc(worksize, sizeof(u32));
+    for(u32 i = 0; i < node_count; i++)
+    {
+        u32 left  = tree_data[i].left;
+        u32 right = tree_data[i].right;
+        
+        if(left > last_node_index)
+            leaf_counters[left-node_count]++;
+        if(right > last_node_index)
+            leaf_counters[right-node_count]++;
+    }
+    
+    for(u32 i = 0; i < worksize; i++)
+    {
+        if(leaf_counters[i] != 1)
+        {
+            ODS("Leaf %d is suspicious \n", i);
+        }
+    }
+    exit(0);
+#endif
     
     // TO DO: there is no provision on some of the compute steps for thread counts not cleanly divisible by 32. DANGER!
     // I would expect the rabbit and the dragon to have some hiccups due to that.
@@ -4189,97 +4214,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
-    
-    // experiment with ray traversal
-#if 0
-    u32 stack_counter = 0;
-    s32 stack[100];
-    u32 stack_max;
-    
-    r32 t_current;
-    for(r32 i = 0.0f; i < 720.0f; i+=1.0f)
-    {
-        for(r32 j = 0.0f; j < 1280.0f; j+=1.0f)
-        {
-            ray r;
-            r.o.x = 0.0f;
-            r.o.y = 0.0f;
-            r.o.z = -10.0f;
-            r.d.x = j;
-            r.d.y = i;
-            r.d.z = t_max;
-            
-            int node = 0;  // root
-            t_current = t_max;
-            stack_max = 0;
-            while( !((node == -1) && (stack_counter == 0)) )
-            {
-                //ODS("Operating node %d \n", node);
-                
-                int left  = tree_data[node].left;
-                int right = tree_data[node].right;
-                
-                // if both are hit, go left, and push right onto stack.
-                // if only one is hit, go there.
-                r32 t_left, t_right;
-                bool inter_left  = RayBox(r, bvh_cpu[left],  &t_left);
-                bool inter_right = RayBox(r, bvh_cpu[right], &t_right);
-                
-                if(inter_left && inter_right)
-                {
-                    //ODS("Ray d(%+-7.4f %+-7.4f %+-7.4f) intersected both children \n", r.d.x, r.d.y, r.d.z);
-                    if(min(t_left, t_right) < t_current)
-                        t_current = min(t_left, t_right);
-                    
-                    node = left;
-                    stack[stack_counter++] = right;
-                    if(stack_max < stack_counter)
-                        stack_max = stack_counter;
-                    if(stack_counter > 100)
-                    {
-                        //ODS("Stack exceeded. Terminating \n");
-                        exit(0);
-                    }
-                    //ODS("Pushing node %d onto stack \n", right);
-                }
-                
-                if(inter_left && !inter_right)
-                {
-                    //ODS("Ray d(%+-7.4f %+-7.4f %+-7.4f) intersected left \n", r.d.x, r.d.y, r.d.z);
-                    if(t_left < t_current)
-                        t_current = t_left;
-                    node = left;
-                }
-                if(!inter_left && inter_right)
-                {
-                    //ODS("Ray d(%+-7.4f %+-7.4f %+-7.4f) intersected right \n", r.d.x, r.d.y, r.d.z);
-                    if(t_right < t_current)
-                        t_current = t_right;
-                    node = right;
-                }
-                
-                if(!inter_left && !inter_right)
-                {
-                    if(stack_counter > 0)
-                    {
-                        //ODS("Popping stack \n");
-                        stack_counter--;
-                        node = stack[stack_counter];
-                    }
-                    else
-                    {
-                        if((t_min < t_current) && (t_current < t_max))
-                            ODS("t %+-7.4f at ray d(%+-7.4f %+-7.4f %+-7.4f). Max stack size %d. Moving on \n", t_current, r.d.x, r.d.y, r.d.z, stack_max);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-#endif
-    
-    
-    //exit(0);
     
     in_struct_v2 *ray_in = (in_struct_v2 *)calloc(1, sizeof(in_struct_v2));
     ray_in->shader_file = String("../code/raytrace.spv");
