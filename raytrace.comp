@@ -221,9 +221,9 @@ poly FetchTri(int index)
 
 
 
-float cam_x = -0.5;
-float cam_y = -0.5;
-float cam_z = -5000.0;
+float cam_x = -0.0;
+float cam_y = -0.0;
+float cam_z = -10.0;
 
 
 int stack_counter = 0;
@@ -352,17 +352,26 @@ void main()
     
     vec2 coord = gl_GlobalInvocationID.xy;
     
-    // Map the image coords to the image plane.
+    // Map the image coords to the image plane; 1280,720 to 4,3
     // Top left corner + the thread coords.
-    float x_inc = 1.0f / WIDTH;
-    float y_inc = 1.0f / HEIGHT;
+    float x_initial = WIDTH;
+    float x_final = 4.0f;
+    float y_initial = HEIGHT;
+    float y_final = 3.0f;
     
-    vec2 top_left = vec2(cam_x, cam_y);
+    float x_inc = x_final / x_initial;
+    float y_inc = y_final / y_initial;
+    
+    float image_plane_z = 10.0;
+    
+    vec2 top_left;
+    top_left.x = - x_final / 2.0;
+    top_left.y = - y_final / 2.0;
     vec2 image_coord = vec2(top_left.x + x_inc * coord.x, top_left.y + y_inc * coord.y);
     
     ray r;
     r.o = vec3(cam_x, cam_y, cam_z);
-    r.d = vec3(image_coord, t_max);
+    r.d = vec3(image_coord, image_plane_z);
     
     float t_current = t_max;
     vec4 color = sky_color;
