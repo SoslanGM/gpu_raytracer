@@ -200,9 +200,11 @@ poly FetchTri(int index)
 {
     poly p;
     
-    uint i0 = indexes[3 * index];
-    uint i1 = indexes[3 * index + 1];
-    uint i2 = indexes[3 * index + 2];
+    index++;
+    
+    uint i0 = indexes[3 * index] + 1;
+    uint i1 = indexes[3 * index + 1] + 1;
+    uint i2 = indexes[3 * index + 2] + 1;
     
     p.v0.x = vertexes[8 * i0];
     p.v0.y = vertexes[8 * i0 + 1];
@@ -220,10 +222,15 @@ poly FetchTri(int index)
 }
 
 
-
-float cam_x = -0.0;
-float cam_y = -0.0;
+/*
+float cam_x = 0.5;
+float cam_y = 0.25;
+float cam_z = 2.5;
+*/
+float cam_x = 0.0;
+float cam_y = 0.0;
 float cam_z = 10.0;
+
 
 
 int stack_counter = 0;
@@ -320,7 +327,7 @@ hit_record Trace(ray r, int node)
     
     // now we're dealing with a triangle
     int obj_vertex_index_offset = 1;
-    int leaf_index = node - node_count + obj_vertex_index_offset;
+    int leaf_index = node - node_count;// + obj_vertex_index_offset;
     // for the first triangle, node == 15487, node_count == 15487...
     // ... so 0 is the correct index. 
     
@@ -357,7 +364,7 @@ void main()
     float x_initial = WIDTH;
     float x_final = 4.0f;
     float y_initial = HEIGHT;
-    float y_final = 3.0f;
+    float y_final = 3.0f * (WIDTH / HEIGHT);
     
     float x_inc = x_final / x_initial;
     float y_inc = y_final / y_initial;
