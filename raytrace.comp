@@ -221,9 +221,9 @@ poly FetchTri(int index)
 
 
 
-float cam_x = -3.0;
-float cam_y = -2.0;
-float cam_z = -5.0;
+float cam_x = -0.5;
+float cam_y = -0.5;
+float cam_z = -5000.0;
 
 
 int stack_counter = 0;
@@ -350,12 +350,19 @@ void main()
     if(gl_GlobalInvocationID.x > WIDTH || gl_GlobalInvocationID.y > HEIGHT)
         return;
     
-    vec2 screen_coord = vec2(gl_GlobalInvocationID.x, HEIGHT-gl_GlobalInvocationID.y);
+    vec2 coord = gl_GlobalInvocationID.xy;
     
+    // Map the image coords to the image plane.
+    // Top left corner + the thread coords.
+    float x_inc = 1.0f / WIDTH;
+    float y_inc = 1.0f / HEIGHT;
+    
+    vec2 top_left = vec2(cam_x, cam_y);
+    vec2 image_coord = vec2(top_left.x + x_inc * coord.x, top_left.y + y_inc * coord.y);
     
     ray r;
     r.o = vec3(cam_x, cam_y, cam_z);
-    r.d = vec3(screen_coord, t_max);
+    r.d = vec3(image_coord, t_max);
     
     float t_current = t_max;
     vec4 color = sky_color;
@@ -383,5 +390,5 @@ void main()
     // Now the node is -1, and stack is empty.
     // And we should have our final t value.
     
-    imageStore(im, ivec2(screen_coord.x, HEIGHT-screen_coord.y), color);
+    imageStore(im, ivec2(coord.x, HEIGHT-coord.y), color);
 }
