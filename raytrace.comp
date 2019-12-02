@@ -223,7 +223,7 @@ poly FetchTri(int index)
 
 float cam_x = -0.0;
 float cam_y = -0.0;
-float cam_z = -10.0;
+float cam_z = 10.0;
 
 
 int stack_counter = 0;
@@ -362,7 +362,7 @@ void main()
     float x_inc = x_final / x_initial;
     float y_inc = y_final / y_initial;
     
-    float image_plane_z = 10.0;
+    float image_plane_z = -10.0;
     
     vec2 top_left;
     top_left.x = - x_final / 2.0;
@@ -370,7 +370,7 @@ void main()
     vec2 image_coord = vec2(top_left.x + x_inc * coord.x, top_left.y + y_inc * coord.y);
     
     ray r;
-    r.o = vec3(cam_x, cam_y, cam_z);
+    r.o = vec3(cam_x, cam_y, cam_z);  // this should be aimed at the center of the image plane
     r.d = vec3(image_coord, image_plane_z);
     
     float t_current = t_max;
