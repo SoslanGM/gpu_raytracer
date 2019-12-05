@@ -138,7 +138,25 @@ struct
     VkDescriptorSet dsl;
     VkDeviceMemory memory;
     
+    VkRenderPass renderpass;
+    
+    VkSemaphoreCreateInfo sem_ci;
+    VkSemaphore semaphore_acquired;
+    
+    VkRect2D scissor;
+    VkPipelineBindPoint bindpoint_graphics = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    VkPipelineBindPoint bindpoint_compute  = VK_PIPELINE_BIND_POINT_COMPUTE;
+    
+    VkPipeline graphics_pipeline;
+    VkPipelineLayout pipelinelayout;
+    VkDescriptorSet descriptorset;
+    
+    VkFenceCreateInfo fence_ci;
+    VkFence fence;
+    
     VkCommandBuffer cbuffer;
+    VkCommandBuffer commandbuffer;
+    VkCommandBufferBeginInfo commandbuffer_bi;
 } vk;
 
 struct
@@ -156,3 +174,13 @@ struct
     u32 window_height;
 } app;
 
+struct
+{
+    
+} raytracing;
+
+struct
+{
+    VkBuffer vertex_buffer;
+    VkBuffer index_buffer;
+} rendering;

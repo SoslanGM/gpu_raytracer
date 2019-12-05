@@ -438,7 +438,6 @@ void CreateCommandPool(VkCommandPool *command_pool)
     commandpool_ci.queueFamilyIndex = vk.queue_family_index;
     
     result = vkCreateCommandPool(vk.device, &commandpool_ci, NULL, &(*command_pool));
-    RevEnum(vk_enums.result_enum, result);
     ODS_RES("Command pool result: %s\n");
 }
 
@@ -452,7 +451,6 @@ void AllocateCommandBuffer(VkCommandPool command_pool, VkCommandBuffer *command_
     cb_ai.commandBufferCount = 1;
     
     result = vkAllocateCommandBuffers(vk.device, &cb_ai, &vk.cbuffer);
-    RevEnum(vk_enums.result_enum, result);
     ODS_RES("Command buffer allocation: %s\n");
 }
 
@@ -481,7 +479,6 @@ void SwapchainCreate()
     swapchain_ci.oldSwapchain          = NULL;
     
     result = vkCreateSwapchainKHR(vk.device, &swapchain_ci, NULL, &vk.swapchain);
-    RevEnum(vk_enums.result_enum, result);
     ODS_RES("Swapchain result: %s\n");
 }
 void GetSwapchainImages()
@@ -517,6 +514,176 @@ void CreateSwapchainImageViews()
 
 
 
+
+VkSubmitInfo GenerateSubmitInfo(u32 wait_count,      VkSemaphore *wait_semaphores,
+                                VkPipelineStageFlags *wait_mask,
+                                u32 command_buffer_count, VkCommandBuffer *command_buffers,
+                                u32 signal_count,    VkSemaphore *signal_semaphores)
+{
+    VkSubmitInfo result = {};
+    result.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    result.pNext                = NULL;
+    result.waitSemaphoreCount   = wait_count;
+    result.pWaitSemaphores      = wait_semaphores;
+    result.pWaitDstStageMask    = wait_mask;
+    result.commandBufferCount   = command_buffer_count;
+    result.pCommandBuffers      = command_buffers;
+    result.signalSemaphoreCount = signal_count;
+    result.pSignalSemaphores    = signal_semaphores;
+    
+    return result;
+}
+
+void TransitImageLayout(VkImageLayout old_layout, VkImageLayout new_layout, VkImage image,
+                        VkQueue queue, VkCommandBuffer command_buffer, VkFence fence,
+                        u32 wait_semaphore_count,   VkSemaphore *wait_semaphores,
+                        u32 signal_semaphore_count, VkSemaphore *signal_semaphores)
+{
+    VkImageMemoryBarrier barrier = {};
+    barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.pNext               = NULL;
+    barrier.srcAccessMask       = VK_ACCESS_HOST_READ_BIT;
+    barrier.dstAccessMask       = VK_ACCESS_HOST_WRITE_BIT;
+    barrier.oldLayout           = old_layout;
+    barrier.newLayout           = new_layout;
+    barrier.image               = image;
+    barrier.subresourceRange    = vk.color_sr;
+    
+    VkPipelineStageFlags wait_stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    VkSubmitInfo queue_si = GenerateSubmitInfo(wait_semaphore_count, wait_semaphores,
+                                               &wait_stage_mask,
+                                               1, &command_buffer,
+                                               signal_semaphore_count, signal_semaphores);
+    
+    void *checkpoint_marker = calloc(1, sizeof(void *));
+    
+    VkCommandBufferBeginInfo commandbuffer_bi = {};
+    vk.commandbuffer_bi.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    vk.commandbuffer_bi.pNext            = NULL;
+    vk.commandbuffer_bi.flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    
+    vkBeginCommandBuffer(command_buffer, &vk.commandbuffer_bi);
+    vkCmdPipelineBarrier(command_buffer,
+                         VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+                         0,
+                         0, NULL,
+                         0, NULL,
+                         1, &barrier);
+    vkEndCommandBuffer(command_buffer);
+    vkQueueSubmit(queue, 1, &queue_si, fence);
+    
+    ODS("Waiting on transit fence\n");
+    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
+    result = vkGetFenceStatus(vk.device, fence);
+    ODS_RES("Transition fence result: %s\n");
+    
+    char *oldlayoutstring = RevEnum_outstr(vk_enums.imagelayout_enum, old_layout);
+    char *newlayoutstring = RevEnum_outstr(vk_enums.imagelayout_enum, new_layout);
+    ODS("> %s -> %s\n", oldlayoutstring, newlayoutstring);
+    free(oldlayoutstring);
+    free(newlayoutstring);
+    
+    ODS("Resetting transit fence\n");
+    vkResetFences(vk.device, 1, &fence);
+}
+
+
+void Render()
+{
+    u32 present_index = 0;
+    result = vkAcquireNextImageKHR(vk.device, vk.swapchain, UINT64_MAX, vk.semaphore_acquired, NULL, &present_index);
+    ODS_RES("Acquisition result: %s\n");
+    
+    
+    
+    VkFramebufferCreateInfo framebuffer_ci = {};
+    framebuffer_ci.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebuffer_ci.pNext           = NULL;
+    framebuffer_ci.flags           = 0;
+    framebuffer_ci.renderPass      = vk.renderpass;
+    framebuffer_ci.attachmentCount = 1;
+    framebuffer_ci.width           = app.window_width;
+    framebuffer_ci.height          = app.window_height;
+    framebuffer_ci.layers          = 1;
+    for(u32 i = 0; i < 2; i++)
+    {
+        framebuffer_ci.pAttachments = &vk.swapchain_imageviews[i];
+        vkCreateFramebuffer(vk.device, &framebuffer_ci, NULL, &vk.framebuffers[i]);
+    }
+    
+    
+    
+    VkClearValue clear_color = { 1.0f, 0.4f, 0.7f, 1.0f };
+    
+    VkRenderPassBeginInfo renderpass_bi = {};
+    renderpass_bi.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderpass_bi.pNext           = NULL;
+    renderpass_bi.renderPass      = vk.renderpass;
+    renderpass_bi.framebuffer     = vk.framebuffers[present_index];
+    renderpass_bi.renderArea      = vk.scissor;
+    renderpass_bi.clearValueCount = 1;
+    renderpass_bi.pClearValues    = &clear_color;
+    
+    
+    
+    VkDeviceSize offset = 0;
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdBindVertexBuffers(vk.commandbuffer, 0, 1, &rendering.vertex_buffer, &offset);
+    vkCmdBindIndexBuffer(vk.commandbuffer, rendering.index_buffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindPipeline(vk.commandbuffer, vk.bindpoint_graphics, vk.graphics_pipeline);
+    vkCmdBindDescriptorSets(vk.commandbuffer, vk.bindpoint_graphics, vk.pipelinelayout, 0, 1, &vk.descriptorset, 0, NULL);
+    vkCmdBeginRenderPass(vk.commandbuffer, &renderpass_bi, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdDrawIndexed(vk.commandbuffer, 6, 1, 0, 0, 0);
+    vkCmdEndRenderPass(vk.commandbuffer);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    
+    VkFence fence_rendered;
+    vkCreateFence(vk.device, &vk.fence_ci, NULL, &fence_rendered);
+    
+    VkPipelineStageFlags waitmask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    
+    VkSubmitInfo si = {};
+    si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    si.pNext                = NULL;
+    si.pWaitDstStageMask    = &waitmask;
+    si.commandBufferCount   = 1;
+    si.pCommandBuffers      = &vk.commandbuffer;
+    vkQueueSubmit(vk.queue, 1, &si, fence_rendered);
+    result = vkWaitForFences(vk.device, 1, &fence_rendered, VK_TRUE, UINT64_MAX);
+    ODS_RES("Render wait result: %s\n");
+    
+    
+    VkPresentInfoKHR pi = {};
+    pi.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    pi.pNext              = NULL;
+    pi.waitSemaphoreCount = 1;
+    pi.pWaitSemaphores    = &vk.semaphore_acquired;
+    pi.swapchainCount     = 1;
+    pi.pSwapchains        = &vk.swapchain;
+    pi.pImageIndices      = &present_index;
+    pi.pResults           = &result;
+    vkQueuePresentKHR(vk.queue, &pi);
+    ODS_RES("Present result: %s\n");
+    
+    vkQueueWaitIdle(vk.queue);
+    
+    // transit from present_src_khr to color_attachment_optimal
+    TransitImageLayout(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, vk.swapchain_images[present_index],
+                       vk.queue, vk.commandbuffer, vk.fence,
+                       0, NULL,
+                       0, NULL);
+    
+    // cleanup
+    vkDestroyFramebuffer(vk.device, vk.framebuffers[0], NULL);
+    vkDestroyFramebuffer(vk.device, vk.framebuffers[1], NULL);
+    vkDestroyFence(vk.device, fence_rendered, NULL);
+}
+
+
+bool display = false;
+
 LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch(message)
@@ -530,7 +697,8 @@ LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam
         
         case WM_PAINT:
         {
-            
+            if(display)
+                Render();
         } break;
         
         case WM_CLOSE:
@@ -542,11 +710,11 @@ LRESULT CALLBACK WndProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam
         {
             if(wParam == SIZE_MINIMIZED)
             {
-                //display = false;
+                display = false;
             }
             if(wParam == SIZE_RESTORED)
             {
-                //display = true;
+                display = true;
             }
         } break;
         
@@ -600,78 +768,6 @@ HWND WindowCreate()
     return window;
 }
 
-
-VkSubmitInfo GenerateSubmitInfo(u32 wait_count,      VkSemaphore *wait_semaphores,
-                                VkPipelineStageFlags *wait_mask,
-                                u32 command_buffer_count, VkCommandBuffer *command_buffers,
-                                u32 signal_count,    VkSemaphore *signal_semaphores)
-{
-    VkSubmitInfo result = {};
-    result.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    result.pNext                = NULL;
-    result.waitSemaphoreCount   = wait_count;
-    result.pWaitSemaphores      = wait_semaphores;
-    result.pWaitDstStageMask    = wait_mask;
-    result.commandBufferCount   = command_buffer_count;
-    result.pCommandBuffers      = command_buffers;
-    result.signalSemaphoreCount = signal_count;
-    result.pSignalSemaphores    = signal_semaphores;
-    
-    return result;
-}
-
-void TransitImageLayout(VkImageLayout old_layout, VkImageLayout new_layout, VkImage image,
-                        VkQueue queue, VkCommandBuffer command_buffer, VkFence fence,
-                        u32 wait_semaphore_count,   VkSemaphore *wait_semaphores,
-                        u32 signal_semaphore_count, VkSemaphore *signal_semaphores)
-{
-    VkImageMemoryBarrier barrier = {};
-    barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.pNext               = NULL;
-    barrier.srcAccessMask       = VK_ACCESS_HOST_READ_BIT;
-    barrier.dstAccessMask       = VK_ACCESS_HOST_WRITE_BIT;
-    barrier.oldLayout           = old_layout;
-    barrier.newLayout           = new_layout;
-    barrier.image               = image;
-    barrier.subresourceRange    = vk.color_sr;
-    
-    VkPipelineStageFlags wait_stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-    VkSubmitInfo queue_si = GenerateSubmitInfo(wait_semaphore_count, wait_semaphores,
-                                               &wait_stage_mask,
-                                               1, &command_buffer,
-                                               signal_semaphore_count, signal_semaphores);
-    
-    void *checkpoint_marker = calloc(1, sizeof(void *));
-    
-    VkCommandBufferBeginInfo commandbuffer_bi = {};
-    commandbuffer_bi.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    commandbuffer_bi.pNext            = NULL;
-    commandbuffer_bi.flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    
-    vkBeginCommandBuffer(command_buffer, &commandbuffer_bi);
-    vkCmdPipelineBarrier(command_buffer,
-                         VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_HOST_BIT,
-                         0,
-                         0, NULL,
-                         0, NULL,
-                         1, &barrier);
-    vkEndCommandBuffer(command_buffer);
-    vkQueueSubmit(queue, 1, &queue_si, fence);
-    
-    ODS("Waiting on transit fence\n");
-    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-    result = vkGetFenceStatus(vk.device, fence);
-    ODS_RES("Transition fence result: %s\n");
-    
-    char *oldlayoutstring = RevEnum_outstr(vk_enums.imagelayout_enum, old_layout);
-    char *newlayoutstring = RevEnum_outstr(vk_enums.imagelayout_enum, new_layout);
-    ODS("> %s -> %s\n", oldlayoutstring, newlayoutstring);
-    free(oldlayoutstring);
-    free(newlayoutstring);
-    
-    ODS("Resetting transit fence\n");
-    vkResetFences(vk.device, 1, &fence);
-}
 
 void GetFormatAndColorspace()
 {
@@ -1537,6 +1633,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     app.window_height = 720;
     app.window = WindowCreate();  // should be in a struct somewhere...
     
+    display = true;
     
     vk.format = VK_FORMAT_B8G8R8A8_UNORM;
     
@@ -1632,24 +1729,24 @@ int CALLBACK WinMain(HINSTANCE instance,
     commandbuffer_ai.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     commandbuffer_ai.commandBufferCount = 1;
     
-    VkCommandBuffer commandbuffer;
-    vkAllocateCommandBuffers(vk.device, &commandbuffer_ai, &commandbuffer);
+    //VkCommandBuffer commandbuffer;
+    vkAllocateCommandBuffers(vk.device, &commandbuffer_ai, &vk.commandbuffer);
     
     VkCommandBufferBeginInfo commandbuffer_bi = {};
-    commandbuffer_bi.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    commandbuffer_bi.pNext            = NULL;
-    commandbuffer_bi.flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vk.commandbuffer_bi.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    vk.commandbuffer_bi.pNext            = NULL;
+    vk.commandbuffer_bi.flags            = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     
     
     
     
-    VkFenceCreateInfo fence_ci = {};
-    fence_ci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fence_ci.pNext = NULL;
-    fence_ci.flags = 0;
+    //VkFenceCreateInfo fence_ci = {};
+    vk.fence_ci.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    vk.fence_ci.pNext = NULL;
+    vk.fence_ci.flags = 0;
     
-    VkFence fence;
-    vkCreateFence(vk.device, &fence_ci, NULL, &fence);
+    //VkFence fence;
+    vkCreateFence(vk.device, &vk.fence_ci, NULL, &vk.fence);
     
     
     VkPipelineStageFlags wait_stage_mask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
@@ -1658,7 +1755,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     transit_si.pNext                = NULL;
     transit_si.pWaitDstStageMask    = &wait_stage_mask;
     transit_si.commandBufferCount   = 1;
-    transit_si.pCommandBuffers      = &commandbuffer;
+    transit_si.pCommandBuffers      = &vk.commandbuffer;
     
     VkImageMemoryBarrier swap0_barrier = {};
     swap0_barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -1681,24 +1778,24 @@ int CALLBACK WinMain(HINSTANCE instance,
     swap1_barrier.subresourceRange    = vk.color_sr;
     
     
-    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-    vkCmdPipelineBarrier(commandbuffer,
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdPipelineBarrier(vk.commandbuffer,
                          VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_HOST_BIT,
                          0,
                          0, NULL,
                          0, NULL,
                          1, &swap0_barrier);
-    vkCmdPipelineBarrier(commandbuffer,
+    vkCmdPipelineBarrier(vk.commandbuffer,
                          VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_HOST_BIT,
                          0,
                          0, NULL,
                          0, NULL,
                          1, &swap1_barrier);
-    vkEndCommandBuffer(commandbuffer);
-    vkQueueSubmit(vk.queue, 1, &transit_si, fence);
+    vkEndCommandBuffer(vk.commandbuffer);
+    vkQueueSubmit(vk.queue, 1, &transit_si, vk.fence);
     
-    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-    vkResetFences(vk.device, 1, &fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
     
     
     TimerSetup();
@@ -1849,18 +1946,18 @@ int CALLBACK WinMain(HINSTANCE instance,
     barrier.image               = computed_image;
     barrier.subresourceRange    = vk.color_sr;
     
-    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-    vkCmdPipelineBarrier(commandbuffer,
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdPipelineBarrier(vk.commandbuffer,
                          VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_HOST_BIT,
                          0,
                          0, NULL,
                          0, NULL,
                          1, &barrier);
-    vkEndCommandBuffer(commandbuffer);
-    vkQueueSubmit(vk.queue, 1, &transit_si, fence);
+    vkEndCommandBuffer(vk.commandbuffer);
+    vkQueueSubmit(vk.queue, 1, &transit_si, vk.fence);
     
-    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-    vkResetFences(vk.device, 1, &fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
     // ---
     
     
@@ -2052,16 +2149,13 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
-    VkPipelineBindPoint bindpoint_graphics = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    VkPipelineBindPoint bindpoint_compute  = VK_PIPELINE_BIND_POINT_COMPUTE;
-    
     
     // Compute stuff
     
     // === Step 1: Take a look at the model vertexes, find min/max of xyz, get the AABB of the model.
-    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-    vkCmdBindDescriptorSets(commandbuffer, bindpoint_compute, vk.pipelayout, 0, 1, &vk.dsl, 0, NULL);
-    vkCmdBindPipeline(commandbuffer, bindpoint_compute, vk.compipe);
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdBindDescriptorSets(vk.commandbuffer, vk.bindpoint_compute, vk.pipelayout, 0, 1, &vk.dsl, 0, NULL);
+    vkCmdBindPipeline(vk.commandbuffer, vk.bindpoint_compute, vk.compipe);
     
     // --- This entire block is riddled with dangerous floaty maths.
     u32 thread_count = model_tricount;
@@ -2083,13 +2177,13 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     // - min/max
     ODS("Dispatch: %5d threads, %4d blocks; [offsets r:%4d | w:%4d]\n", thread_count, block_count, controls.read_offset, controls.write_offset);
-    vkCmdPushConstants(commandbuffer, vk.pipelayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(controls), &controls);  // is sizeof(controls) 12?
-    vkCmdDispatch(commandbuffer, block_count, 1, 1);
+    vkCmdPushConstants(vk.commandbuffer, vk.pipelayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(controls), &controls);  // is sizeof(controls) 12?
+    vkCmdDispatch(vk.commandbuffer, block_count, 1, 1);
     for(; block_count > 1; )
     {
         thread_count = ceil((r32)thread_count / (r32)block_size);
         
-        vkCmdPipelineBarrier(commandbuffer,
+        vkCmdPipelineBarrier(vk.commandbuffer,
                              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                              0,
                              1, &dispatch_barrier,
@@ -2102,10 +2196,10 @@ int CALLBACK WinMain(HINSTANCE instance,
         controls.write_offset = ceil((r32)block_count / 32.0f) * 32;
         ODS("Dispatch: %5d threads, %4d blocks; [offsets r:%4d | w:%4d]\n", thread_count, block_count, controls.read_offset, controls.write_offset);
         
-        vkCmdPushConstants(commandbuffer, vk.pipelayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(controls), &controls);
-        vkCmdDispatch(commandbuffer, block_count, 1, 1);
+        vkCmdPushConstants(vk.commandbuffer, vk.pipelayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(controls), &controls);
+        vkCmdDispatch(vk.commandbuffer, block_count, 1, 1);
     }
-    vkEndCommandBuffer(commandbuffer);
+    vkEndCommandBuffer(vk.commandbuffer);
     // ---
     
     
@@ -2114,10 +2208,10 @@ int CALLBACK WinMain(HINSTANCE instance,
     compute_si.pNext                = NULL;
     compute_si.pWaitDstStageMask    = &wait_stage_mask;
     compute_si.commandBufferCount   = 1;
-    compute_si.pCommandBuffers      = &commandbuffer;
-    vkQueueSubmit(vk.queue, 1, &compute_si, fence);
-    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-    vkResetFences(vk.device, 1, &fence);
+    compute_si.pCommandBuffers      = &vk.commandbuffer;
+    vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
     
     
     r64 GPU_time_elapsed_s  = TimerElapsedFrom(GPU_calc_start, SECONDS);
@@ -2472,17 +2566,17 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     // --- generate mortons
     // command buffer
-    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-    vkCmdBindDescriptorSets(commandbuffer, bindpoint_compute, compipe2_layout, 0, 1, &compipe2_ds, 0, NULL);
-    vkCmdBindPipeline(commandbuffer, bindpoint_compute, compipe2);
-    vkCmdPushConstants(commandbuffer, compipe2_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(r32) * 6 + sizeof(u32), &step2_controls);
-    vkCmdDispatch(commandbuffer, block_count, 1, 1);
-    vkEndCommandBuffer(commandbuffer);
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdBindDescriptorSets(vk.commandbuffer, vk.bindpoint_compute, compipe2_layout, 0, 1, &compipe2_ds, 0, NULL);
+    vkCmdBindPipeline(vk.commandbuffer, vk.bindpoint_compute, compipe2);
+    vkCmdPushConstants(vk.commandbuffer, compipe2_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(r32) * 6 + sizeof(u32), &step2_controls);
+    vkCmdDispatch(vk.commandbuffer, block_count, 1, 1);
+    vkEndCommandBuffer(vk.commandbuffer);
     
     // execution
-    vkQueueSubmit(vk.queue, 1, &compute_si, fence);
-    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-    vkResetFences(vk.device, 1, &fence);
+    vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
     
     
     bvhdata *step2_data = (bvhdata *)malloc(sizeof(bvhdata) * model_tricount);
@@ -3040,16 +3134,16 @@ int CALLBACK WinMain(HINSTANCE instance,
         step1_in->pcr_data[1] = i;
         vkUpdateDescriptorSets(vk.device, step1_out->descwrite_count, step1_out->descwrites, 0, NULL);
         
-        vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-        vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, step1_out->pipe_layout, 0, 1, &step1_out->pipe_dset, 0, NULL);
-        vkCmdPushConstants(commandbuffer, step1_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, step1_in->pcr_size * sizeof(u32), step1_in->pcr_data);
-        vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, step1_out->pipe);
-        vkCmdDispatch(commandbuffer, blockcount, 1, 1);
-        vkEndCommandBuffer(commandbuffer);
+        vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+        vkCmdBindDescriptorSets(vk.commandbuffer, pipeline_bindpoint, step1_out->pipe_layout, 0, 1, &step1_out->pipe_dset, 0, NULL);
+        vkCmdPushConstants(vk.commandbuffer, step1_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, step1_in->pcr_size * sizeof(u32), step1_in->pcr_data);
+        vkCmdBindPipeline(vk.commandbuffer, pipeline_bindpoint, step1_out->pipe);
+        vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
+        vkEndCommandBuffer(vk.commandbuffer);
         
-        vkQueueSubmit(vk.queue, 1, &compute_si, fence);
-        vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-        vkResetFences(vk.device, 1, &fence);
+        vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+        vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+        vkResetFences(vk.device, 1, &vk.fence);
         
         // - read output
         u32 *step1_output_flag_vector_zero = (u32 *)calloc(1, workdata_size);
@@ -3116,16 +3210,16 @@ int CALLBACK WinMain(HINSTANCE instance,
         // Step 2: scan vectors
         vkUpdateDescriptorSets(vk.device, step2_out->descwrite_count, step2_out->descwrites, 0, NULL);
         
-        vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-        vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, step2_out->pipe_layout, 0, 1, &step2_out->pipe_dset, 0, NULL);
-        vkCmdPushConstants(commandbuffer, step2_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, step2_in->pcr_size * sizeof(u32), step2_in->pcr_data);
-        vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, step2_out->pipe);
-        vkCmdDispatch(commandbuffer, blockcount, 1, 1);
-        vkEndCommandBuffer(commandbuffer);
+        vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+        vkCmdBindDescriptorSets(vk.commandbuffer, pipeline_bindpoint, step2_out->pipe_layout, 0, 1, &step2_out->pipe_dset, 0, NULL);
+        vkCmdPushConstants(vk.commandbuffer, step2_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, step2_in->pcr_size * sizeof(u32), step2_in->pcr_data);
+        vkCmdBindPipeline(vk.commandbuffer, pipeline_bindpoint, step2_out->pipe);
+        vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
+        vkEndCommandBuffer(vk.commandbuffer);
         
-        vkQueueSubmit(vk.queue, 1, &compute_si, fence);
-        vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-        vkResetFences(vk.device, 1, &fence);
+        vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+        vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+        vkResetFences(vk.device, 1, &vk.fence);
         
         // - read results
         u32 *step2_output_scan_vector_zero = (u32 *)calloc(1, workdata_size);
@@ -3201,16 +3295,16 @@ int CALLBACK WinMain(HINSTANCE instance,
         // Step 3: block sums
         vkUpdateDescriptorSets(vk.device, step3_out->descwrite_count, step3_out->descwrites, 0, NULL);
         
-        vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-        vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, step3_out->pipe_layout, 0, 1, &step3_out->pipe_dset, 0, NULL);
-        vkCmdPushConstants(commandbuffer, step3_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, step3_in->pcr_size * sizeof(u32), step3_in->pcr_data);
-        vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, step3_out->pipe);
-        vkCmdDispatch(commandbuffer, blockcount, 1, 1);
-        vkEndCommandBuffer(commandbuffer);
+        vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+        vkCmdBindDescriptorSets(vk.commandbuffer, pipeline_bindpoint, step3_out->pipe_layout, 0, 1, &step3_out->pipe_dset, 0, NULL);
+        vkCmdPushConstants(vk.commandbuffer, step3_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, step3_in->pcr_size * sizeof(u32), step3_in->pcr_data);
+        vkCmdBindPipeline(vk.commandbuffer, pipeline_bindpoint, step3_out->pipe);
+        vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
+        vkEndCommandBuffer(vk.commandbuffer);
         
-        vkQueueSubmit(vk.queue, 1, &compute_si, fence);
-        vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-        vkResetFences(vk.device, 1, &fence);
+        vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+        vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+        vkResetFences(vk.device, 1, &vk.fence);
         
         u32 *step3_output_sum_vector_zero = (u32 *)calloc(blockcount, sizeof(u32));
         memcpy(step3_output_sum_vector_zero, flag_sum_zero_mapptr, blockcount * sizeof(u32));
@@ -3266,15 +3360,15 @@ int CALLBACK WinMain(HINSTANCE instance,
         // Step 4: sum scans
         vkUpdateDescriptorSets(vk.device, step4_out->descwrite_count, step4_out->descwrites, 0, NULL);
         
-        vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-        vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, step4_out->pipe_layout, 0, 1, &step4_out->pipe_dset, 0, NULL);
-        vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, step4_out->pipe);
-        vkCmdDispatch(commandbuffer, blockcount, 1, 1);
-        vkEndCommandBuffer(commandbuffer);
+        vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+        vkCmdBindDescriptorSets(vk.commandbuffer, pipeline_bindpoint, step4_out->pipe_layout, 0, 1, &step4_out->pipe_dset, 0, NULL);
+        vkCmdBindPipeline(vk.commandbuffer, pipeline_bindpoint, step4_out->pipe);
+        vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
+        vkEndCommandBuffer(vk.commandbuffer);
         
-        vkQueueSubmit(vk.queue, 1, &compute_si, fence);
-        vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-        vkResetFences(vk.device, 1, &fence);
+        vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+        vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+        vkResetFences(vk.device, 1, &vk.fence);
         
         
         u32 *step4_output_sum_scan = (u32 *)calloc(2 * blockcount, sizeof(u32));
@@ -3329,16 +3423,16 @@ int CALLBACK WinMain(HINSTANCE instance,
         // Step 5: modify flag scans with sum scans
         vkUpdateDescriptorSets(vk.device, step5_out->descwrite_count, step5_out->descwrites, 0, NULL);
         
-        vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-        vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, step5_out->pipe_layout, 0, 1, &step5_out->pipe_dset, 0, NULL);
-        vkCmdPushConstants(commandbuffer, step5_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, step5_in->pcr_size * sizeof(u32), step5_in->pcr_data);
-        vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, step5_out->pipe);
-        vkCmdDispatch(commandbuffer, blockcount, 1, 1);
-        vkEndCommandBuffer(commandbuffer);
+        vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+        vkCmdBindDescriptorSets(vk.commandbuffer, pipeline_bindpoint, step5_out->pipe_layout, 0, 1, &step5_out->pipe_dset, 0, NULL);
+        vkCmdPushConstants(vk.commandbuffer, step5_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, step5_in->pcr_size * sizeof(u32), step5_in->pcr_data);
+        vkCmdBindPipeline(vk.commandbuffer, pipeline_bindpoint, step5_out->pipe);
+        vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
+        vkEndCommandBuffer(vk.commandbuffer);
         
-        vkQueueSubmit(vk.queue, 1, &compute_si, fence);
-        vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-        vkResetFences(vk.device, 1, &fence);
+        vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+        vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+        vkResetFences(vk.device, 1, &vk.fence);
         
         
         
@@ -3370,16 +3464,16 @@ int CALLBACK WinMain(HINSTANCE instance,
         // Step 6: redistribute values
         vkUpdateDescriptorSets(vk.device, step6_out->descwrite_count, step6_out->descwrites, 0, NULL);
         
-        vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-        vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, step6_out->pipe_layout, 0, 1, &step6_out->pipe_dset, 0, NULL);
-        vkCmdPushConstants(commandbuffer, step6_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, step6_in->pcr_size * sizeof(u32), step6_in->pcr_data);
-        vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, step6_out->pipe);
-        vkCmdDispatch(commandbuffer, blockcount, 1, 1);
-        vkEndCommandBuffer(commandbuffer);
+        vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+        vkCmdBindDescriptorSets(vk.commandbuffer, pipeline_bindpoint, step6_out->pipe_layout, 0, 1, &step6_out->pipe_dset, 0, NULL);
+        vkCmdPushConstants(vk.commandbuffer, step6_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, step6_in->pcr_size * sizeof(u32), step6_in->pcr_data);
+        vkCmdBindPipeline(vk.commandbuffer, pipeline_bindpoint, step6_out->pipe);
+        vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
+        vkEndCommandBuffer(vk.commandbuffer);
         
-        vkQueueSubmit(vk.queue, 1, &compute_si, fence);
-        vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-        vkResetFences(vk.device, 1, &fence);
+        vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+        vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+        vkResetFences(vk.device, 1, &vk.fence);
         
         
 #if PRINT
@@ -3403,16 +3497,16 @@ int CALLBACK WinMain(HINSTANCE instance,
         // Step 7: copy sorted mortons back into inputs
         vkUpdateDescriptorSets(vk.device, step7_out->descwrite_count, step7_out->descwrites, 0, NULL);
         
-        vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-        vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, step7_out->pipe_layout, 0, 1, &step7_out->pipe_dset, 0, NULL);
-        vkCmdPushConstants(commandbuffer, step7_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, step7_in->pcr_size * sizeof(u32), step7_in->pcr_data);
-        vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, step7_out->pipe);
-        vkCmdDispatch(commandbuffer, blockcount, 1, 1);
-        vkEndCommandBuffer(commandbuffer);
+        vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+        vkCmdBindDescriptorSets(vk.commandbuffer, pipeline_bindpoint, step7_out->pipe_layout, 0, 1, &step7_out->pipe_dset, 0, NULL);
+        vkCmdPushConstants(vk.commandbuffer, step7_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, step7_in->pcr_size * sizeof(u32), step7_in->pcr_data);
+        vkCmdBindPipeline(vk.commandbuffer, pipeline_bindpoint, step7_out->pipe);
+        vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
+        vkEndCommandBuffer(vk.commandbuffer);
         
-        vkQueueSubmit(vk.queue, 1, &compute_si, fence);
-        vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-        vkResetFences(vk.device, 1, &fence);
+        vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+        vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+        vkResetFences(vk.device, 1, &vk.fence);
         
         
         
@@ -3541,20 +3635,20 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     vkUpdateDescriptorSets(vk.device, tree_out->descwrite_count, tree_out->descwrites, 0, NULL);
     
-    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-    vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, tree_out->pipe_layout, 0, 1, &tree_out->pipe_dset, 0, NULL);
-    vkCmdPushConstants(commandbuffer, tree_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, tree_in->pcr_size * sizeof(u32), tree_in->pcr_data);
-    vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, tree_out->pipe);
-    vkCmdDispatch(commandbuffer, blockcount, 1, 1);
-    vkEndCommandBuffer(commandbuffer);
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdBindDescriptorSets(vk.commandbuffer, pipeline_bindpoint, tree_out->pipe_layout, 0, 1, &tree_out->pipe_dset, 0, NULL);
+    vkCmdPushConstants(vk.commandbuffer, tree_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, tree_in->pcr_size * sizeof(u32), tree_in->pcr_data);
+    vkCmdBindPipeline(vk.commandbuffer, pipeline_bindpoint, tree_out->pipe);
+    vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
+    vkEndCommandBuffer(vk.commandbuffer);
     
-    result = vkQueueSubmit(vk.queue, 1, &compute_si, fence);
+    result = vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
     ODS_RES("Execution: %s \n");
-    result = vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
+    result = vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
     ODS_RES("Suspicious fence wait: %s \n");
-    result = vkGetFenceStatus(vk.device, fence);
+    result = vkGetFenceStatus(vk.device, vk.fence);
     ODS_RES("Suspicious fence status: %s \n");
-    result = vkResetFences(vk.device, 1, &fence);
+    result = vkResetFences(vk.device, 1, &vk.fence);
     ODS_RES("Suspicious fence reset: %s \n");
     
     memcpy(tree_data, tree_mapptr, tree_datasize);
@@ -3773,16 +3867,16 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     vkUpdateDescriptorSets(vk.device, tree_depth_out->descwrite_count, tree_depth_out->descwrites, 0, NULL);
     
-    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-    vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, tree_depth_out->pipe_layout, 0, 1, &tree_depth_out->pipe_dset, 0, NULL);
-    vkCmdPushConstants(commandbuffer, tree_depth_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, tree_depth_in->pcr_size * sizeof(u32), tree_depth_in->pcr_data);
-    vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, tree_depth_out->pipe);
-    vkCmdDispatch(commandbuffer, blockcount, 1, 1);
-    vkEndCommandBuffer(commandbuffer);
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdBindDescriptorSets(vk.commandbuffer, pipeline_bindpoint, tree_depth_out->pipe_layout, 0, 1, &tree_depth_out->pipe_dset, 0, NULL);
+    vkCmdPushConstants(vk.commandbuffer, tree_depth_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, tree_depth_in->pcr_size * sizeof(u32), tree_depth_in->pcr_data);
+    vkCmdBindPipeline(vk.commandbuffer, pipeline_bindpoint, tree_depth_out->pipe);
+    vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
+    vkEndCommandBuffer(vk.commandbuffer);
     
-    vkQueueSubmit(vk.queue, 1, &compute_si, fence);
-    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-    vkResetFences(vk.device, 1, &fence);
+    vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
     
     
     
@@ -4066,16 +4160,16 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     vkUpdateDescriptorSets(vk.device, bvh_out->descwrite_count, bvh_out->descwrites, 0, NULL);
     
-    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-    vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, bvh_out->pipe_layout, 0, 1, &bvh_out->pipe_dset, 0, NULL);
-    vkCmdPushConstants(commandbuffer, bvh_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, bvh_in->pcr_size * sizeof(u32), bvh_in->pcr_data);
-    vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, bvh_out->pipe);
-    vkCmdDispatch(commandbuffer, blockcount, 1, 1);
-    vkEndCommandBuffer(commandbuffer);
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdBindDescriptorSets(vk.commandbuffer, pipeline_bindpoint, bvh_out->pipe_layout, 0, 1, &bvh_out->pipe_dset, 0, NULL);
+    vkCmdPushConstants(vk.commandbuffer, bvh_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, bvh_in->pcr_size * sizeof(u32), bvh_in->pcr_data);
+    vkCmdBindPipeline(vk.commandbuffer, pipeline_bindpoint, bvh_out->pipe);
+    vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
+    vkEndCommandBuffer(vk.commandbuffer);
     
-    vkQueueSubmit(vk.queue, 1, &compute_si, fence);
-    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-    vkResetFences(vk.device, 1, &fence);
+    vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
     
     
 #if 0
@@ -4204,15 +4298,15 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     vkUpdateDescriptorSets(vk.device, ray_out->descwrite_count, ray_out->descwrites, 0, NULL);
     
-    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-    vkCmdBindDescriptorSets(commandbuffer, pipeline_bindpoint, ray_out->pipe_layout, 0, 1, &ray_out->pipe_dset, 0, NULL);
-    vkCmdBindPipeline(commandbuffer, pipeline_bindpoint, ray_out->pipe);
-    vkCmdDispatch(commandbuffer, xdim, ydim, 1);
-    vkEndCommandBuffer(commandbuffer);
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdBindDescriptorSets(vk.commandbuffer, pipeline_bindpoint, ray_out->pipe_layout, 0, 1, &ray_out->pipe_dset, 0, NULL);
+    vkCmdBindPipeline(vk.commandbuffer, pipeline_bindpoint, ray_out->pipe);
+    vkCmdDispatch(vk.commandbuffer, xdim, ydim, 1);
+    vkEndCommandBuffer(vk.commandbuffer);
     
-    vkQueueSubmit(vk.queue, 1, &compute_si, fence);
-    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-    vkResetFences(vk.device, 1, &fence);
+    vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
     
     
     
@@ -4432,8 +4526,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     pipelinelayout_ci.setLayoutCount         = 1;
     pipelinelayout_ci.pSetLayouts            = &descriptorset_layout;
     
-    VkPipelineLayout pipelinelayout;
-    vkCreatePipelineLayout(vk.device, &pipelinelayout_ci, NULL, &pipelinelayout);
+    //VkPipelineLayout pipelinelayout;
+    vkCreatePipelineLayout(vk.device, &pipelinelayout_ci, NULL, &vk.pipelinelayout);
     
     
     
@@ -4443,7 +4537,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     VkSubpassDescription subpass = {};
     subpass.flags                   = 0;
-    subpass.pipelineBindPoint       = bindpoint_graphics;
+    subpass.pipelineBindPoint       = vk.bindpoint_graphics;
     subpass.colorAttachmentCount    = 1;
     subpass.pColorAttachments       = &subpass_attachmentreference;
     
@@ -4466,8 +4560,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     renderpass_ci.subpassCount    = 1;
     renderpass_ci.pSubpasses      = &subpass;
     
-    VkRenderPass renderpass;
-    vkCreateRenderPass(vk.device, &renderpass_ci, NULL, &renderpass);
+    //VkRenderPass renderpass;
+    vkCreateRenderPass(vk.device, &renderpass_ci, NULL, &vk.renderpass);
     
     
     VkGraphicsPipelineCreateInfo graphics_pipeline_ci = {};
@@ -4485,12 +4579,12 @@ int CALLBACK WinMain(HINSTANCE instance,
     graphics_pipeline_ci.pDepthStencilState  = NULL;
     graphics_pipeline_ci.pColorBlendState    = &colorblend_state;
     graphics_pipeline_ci.pDynamicState       = NULL;
-    graphics_pipeline_ci.layout              = pipelinelayout;
-    graphics_pipeline_ci.renderPass          = renderpass;
+    graphics_pipeline_ci.layout              = vk.pipelinelayout;
+    graphics_pipeline_ci.renderPass          = vk.renderpass;
     graphics_pipeline_ci.subpass             = 0;
     
-    VkPipeline graphics_pipeline;
-    vkCreateGraphicsPipelines(vk.device, NULL, 1, &graphics_pipeline_ci, NULL, &graphics_pipeline);
+    //VkPipeline graphics_pipeline;
+    vkCreateGraphicsPipelines(vk.device, NULL, 1, &graphics_pipeline_ci, NULL, &vk.graphics_pipeline);
     
     
     VkDescriptorPoolSize descriptorpool_size = {};
@@ -4516,8 +4610,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     descriptorset_ai.descriptorSetCount = 1;
     descriptorset_ai.pSetLayouts        = &descriptorset_layout;
     
-    VkDescriptorSet descriptorset;
-    vkAllocateDescriptorSets(vk.device, &descriptorset_ai, &descriptorset);
+    //VkDescriptorSet descriptorset;
+    vkAllocateDescriptorSets(vk.device, &descriptorset_ai, &vk.descriptorset);
     
     
     
@@ -4526,18 +4620,18 @@ int CALLBACK WinMain(HINSTANCE instance,
     barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     barrier.image = computed_image;
     
-    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-    vkCmdPipelineBarrier(commandbuffer,
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdPipelineBarrier(vk.commandbuffer,
                          VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_HOST_BIT,
                          0,
                          0, NULL,
                          0, NULL,
                          1, &barrier);
-    vkEndCommandBuffer(commandbuffer);
-    vkQueueSubmit(vk.queue, 1, &transit_si, fence);
+    vkEndCommandBuffer(vk.commandbuffer);
+    vkQueueSubmit(vk.queue, 1, &transit_si, vk.fence);
     
-    vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-    vkResetFences(vk.device, 1, &fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
     
     
     
@@ -4553,7 +4647,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     VkWriteDescriptorSet descriptor_write = {};
     descriptor_write.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     descriptor_write.pNext            = NULL;
-    descriptor_write.dstSet           = descriptorset;
+    descriptor_write.dstSet           = vk.descriptorset;
     descriptor_write.dstBinding       = 0;
     descriptor_write.dstArrayElement  = 0;
     descriptor_write.descriptorCount  = 1;
@@ -4565,22 +4659,26 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
-    VkSemaphoreCreateInfo sem_ci = {};
-    sem_ci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    sem_ci.pNext = NULL;
-    sem_ci.flags = 0;
+    //VkSemaphoreCreateInfo sem_ci = {};
+    vk.sem_ci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    vk.sem_ci.pNext = NULL;
+    vk.sem_ci.flags = 0;
     
-    VkSemaphore semaphore_acquired;
-    vkCreateSemaphore(vk.device, &sem_ci, NULL, &semaphore_acquired);
+    //VkSemaphore semaphore_acquired;
+    vkCreateSemaphore(vk.device, &vk.sem_ci, NULL, &vk.semaphore_acquired);
     
     
     
+#if 0    
     u32 present_index = 0;
     result = vkAcquireNextImageKHR(vk.device, vk.swapchain, UINT64_MAX, semaphore_acquired, NULL, &present_index);
     ODS_RES("Acquisition result: %s\n");
+#endif
     
     vk.framebuffers = (VkFramebuffer *)calloc(2, sizeof(VkFramebuffer));
     
+    
+#if 0
     VkFramebufferCreateInfo framebuffer_ci = {};
     framebuffer_ci.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     framebuffer_ci.pNext           = NULL;
@@ -4595,6 +4693,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         framebuffer_ci.pAttachments = &vk.swapchain_imageviews[i];
         vkCreateFramebuffer(vk.device, &framebuffer_ci, NULL, &vk.framebuffers[i]);
     }
+#endif
     
     
     
@@ -4610,12 +4709,13 @@ int CALLBACK WinMain(HINSTANCE instance,
     vertex quad[] = { v0, v1, v2, v3 };
     
     VkDeviceMemory vertex_memory;
-    VkBuffer vertex_buffer = CreateBuffer(4 * 5 * sizeof(float),  // 4 * 5 *
-                                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                          vk.device,
-                                          gpu_memprops,
-                                          &vertex_memory);
+    //VkBuffer 
+    rendering.vertex_buffer = CreateBuffer(4 * 5 * sizeof(float),  // 4 * 5 *
+                                           VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                           vk.device,
+                                           gpu_memprops,
+                                           &vertex_memory);
     
     void *vertex_mapptr;
     vkMapMemory(vk.device, vertex_memory, 0, VK_WHOLE_SIZE, 0, &vertex_mapptr);
@@ -4625,12 +4725,13 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     u32 indexes[] = { 0, 1, 2, 1, 3, 2 };
     VkDeviceMemory index_memory;
-    VkBuffer index_buffer = CreateBuffer(6 * sizeof(u32),  // 6 *
-                                         VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                         vk.device,
-                                         gpu_memprops,
-                                         &index_memory);
+    //VkBuffer
+    rendering.index_buffer = CreateBuffer(6 * sizeof(u32),  // 6 *
+                                          VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                          vk.device,
+                                          gpu_memprops,
+                                          &index_memory);
     
     void *index_mapptr;
     vkMapMemory(vk.device, index_memory, 0, VK_WHOLE_SIZE, 0, &index_mapptr);
@@ -4638,6 +4739,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkUnmapMemory(vk.device, index_memory);
     
     
+#if 0    
     VkClearValue clear_color = { 1.0f, 0.4f, 0.7f, 1.0f };
     
     VkRenderPassBeginInfo renderpass_bi = {};
@@ -4652,15 +4754,15 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     VkDeviceSize offset = 0;
     
-    vkBeginCommandBuffer(commandbuffer, &commandbuffer_bi);
-    vkCmdBindVertexBuffers(commandbuffer, 0, 1, &vertex_buffer, &offset);
-    vkCmdBindIndexBuffer(commandbuffer, index_buffer, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdBindPipeline(commandbuffer, bindpoint_graphics, graphics_pipeline);
-    vkCmdBindDescriptorSets(commandbuffer, bindpoint_graphics, pipelinelayout, 0, 1, &descriptorset, 0, NULL);
-    vkCmdBeginRenderPass(commandbuffer, &renderpass_bi, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdDrawIndexed(commandbuffer, 6, 1, 0, 0, 0);
-    vkCmdEndRenderPass(commandbuffer);
-    vkEndCommandBuffer(commandbuffer);
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdBindVertexBuffers(vk.commandbuffer, 0, 1, &vertex_buffer, &offset);
+    vkCmdBindIndexBuffer(vk.commandbuffer, index_buffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindPipeline(vk.commandbuffer, bindpoint_graphics, vk.graphice_pipeline);
+    vkCmdBindDescriptorSets(vk.commandbuffer, bindpoint_graphics, vk.pipelinelayout, 0, 1, &vk.descriptorset, 0, NULL);
+    vkCmdBeginRenderPass(vk.commandbuffer, &renderpass_bi, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdDrawIndexed(vk.commandbuffer, 6, 1, 0, 0, 0);
+    vkCmdEndRenderPass(vk.commandbuffer);
+    vkEndCommandBuffer(vk.commandbuffer);
     
     
     VkFence fence_rendered;
@@ -4673,12 +4775,11 @@ int CALLBACK WinMain(HINSTANCE instance,
     si.pNext                = NULL;
     si.pWaitDstStageMask    = &waitmask;
     si.commandBufferCount   = 1;
-    si.pCommandBuffers      = &commandbuffer;
+    si.pCommandBuffers      = &vk.commandbuffer;
     vkQueueSubmit(vk.queue, 1, &si, fence_rendered);
     result = vkWaitForFences(vk.device, 1, &fence_rendered, VK_TRUE, UINT64_MAX);
     ODS_RES("Render wait result: %s\n");
-    vkResetFences(vk.device, 1, &fence);
-    
+    vkResetFences(vk.device, 1, &vk.fence);
     
     VkPresentInfoKHR pi = {};
     pi.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -4691,6 +4792,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     pi.pResults           = &result;
     vkQueuePresentKHR(vk.queue, &pi);
     ODS_RES("Present result: %s\n");
+#endif
+    
     
     MSG msg;
     bool done = false;
