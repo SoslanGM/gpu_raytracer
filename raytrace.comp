@@ -194,17 +194,19 @@ struct poly
     vec3 v0;
     vec3 v1;
     vec3 v2;
+    
+    vec3 n0;
+    vec3 n1;
+    vec3 n2;
 };
 
 poly FetchTri(int index)
 {
     poly p;
     
-    index++;
-    
-    uint i0 = indexes[3 * index] + 1;
-    uint i1 = indexes[3 * index + 1] + 1;
-    uint i2 = indexes[3 * index + 2] + 1;
+    uint i0 = indexes[3 * index];
+    uint i1 = indexes[3 * index + 1];
+    uint i2 = indexes[3 * index + 2];
     
     p.v0.x = vertexes[8 * i0];
     p.v0.y = vertexes[8 * i0 + 1];
@@ -218,18 +220,35 @@ poly FetchTri(int index)
     p.v2.y = vertexes[8 * i2 + 1];
     p.v2.z = vertexes[8 * i2 + 2];
     
+    
+    p.n0.x = vertexes[8 * i0 + 5];
+    p.n0.y = vertexes[8 * i0 + 6];
+    p.n0.z = vertexes[8 * i0 + 7];
+    
+    p.n1.x = vertexes[8 * i1 + 5];
+    p.n1.y = vertexes[8 * i1 + 6];
+    p.n1.z = vertexes[8 * i1 + 7];
+    
+    p.n2.x = vertexes[8 * i2 + 5];
+    p.n2.y = vertexes[8 * i2 + 6];
+    p.n2.z = vertexes[8 * i2 + 7];
+    
     return p;
 }
 
 
-/*
+
+#if 0
 float cam_x = 0.5;
 float cam_y = 0.25;
 float cam_z = 2.5;
-*/
+#endif
+
+#if 1
 float cam_x = 0.0;
 float cam_y = 0.0;
-float cam_z = 10.0;
+float cam_z = 25.0;
+#endif
 
 
 
@@ -246,21 +265,23 @@ tri_record RayTri(ray r, poly tri)
 {
     tri_record rec;
     
-    vec3 n = normalize(cross(tri.v1-tri.v0, tri.v2-tri.v0));
+    vec3 n_plane = normalize(cross(tri.v1-tri.v0, tri.v2-tri.v0));
+    //vec3 n = tri.n2;
+    
     // if the ray is parallel to the triangle, we're not interested
 #if 1
-    if(dot(r.d, n) == 0)
+    if(dot(r.d, n_plane) == 0)
     {
         rec.t = t_max;
-        rec.n = n;
+        rec.n = n_plane;
         return rec;
     }
 #endif
     
     // last component of the plane's equation:
-    float d = -dot(n, tri.v0);
+    float d = -dot(n_plane, tri.v0);
     
-    float t = - (dot(n, r.o) + d) / dot(n, r.d);
+    float t = - (dot(n_plane, r.o) + d) / dot(n_plane, r.d);
     //float t = (dot(n, r.o) + d)/dot(n, r.o-r.d);  // with (1-t) before o. Which makes no sense :P
     
     
@@ -276,11 +297,13 @@ tri_record RayTri(ray r, poly tri)
     float b = det_b / det_m;
     float c = det_c / det_m;
     
+    vec3 n_point = (a * tri.n0 + b * tri.n1 + c * tri.n2) / (a+b+c);
+    
     bool inside = true;
     if((a < 0) || (b < 0) || (c < 0))
         inside = false;
     
-    rec.n = n;
+    rec.n = n_point;
     rec.t = (inside) ? t : t_max;
     
     return rec;
@@ -327,7 +350,7 @@ hit_record Trace(ray r, int node)
     
     // now we're dealing with a triangle
     int obj_vertex_index_offset = 1;
-    int leaf_index = node - node_count;// + obj_vertex_index_offset;
+    int leaf_index = node - node_count + obj_vertex_index_offset;
     // for the first triangle, node == 15487, node_count == 15487...
     // ... so 0 is the correct index. 
     
@@ -359,12 +382,12 @@ void main()
     
     vec2 coord = gl_GlobalInvocationID.xy;
     
-    // Map the image coords to the image plane; 1280,720 to 4,3
+    // Map the image coords to the image plane; 1280,720 to 4,3- ratio's 16:9 though!
     // Top left corner + the thread coords.
     float x_initial = WIDTH;
-    float x_final = 4.0f;
+    float x_final = 1.6f;
     float y_initial = HEIGHT;
-    float y_final = 3.0f * (WIDTH / HEIGHT);
+    float y_final = 0.9f * (WIDTH / HEIGHT);
     
     float x_inc = x_final / x_initial;
     float y_inc = y_final / y_initial;
@@ -377,7 +400,7 @@ void main()
     vec2 image_coord = vec2(top_left.x + x_inc * coord.x, top_left.y + y_inc * coord.y);
     
     ray r;
-    r.o = vec3(cam_x, cam_y, cam_z);  // this should be aimed at the center of the image plane
+    r.o = vec3(cam_x, cam_y, cam_z);
     r.d = vec3(image_coord, image_plane_z);
     
     float t_current = t_max;
@@ -399,12 +422,6 @@ void main()
             color = h.color;
         }
     }
-    
-    // * The time to pop the stack is once you hit the leaf. (node = stack[--stack_counter])
-    // * The time to assign the running t value is once you get the t value of RayTri.
-    
-    // Now the node is -1, and stack is empty.
-    // And we should have our final t value.
     
     imageStore(im, ivec2(coord.x, HEIGHT-coord.y), color);
 }

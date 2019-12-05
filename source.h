@@ -16,7 +16,9 @@ printf(ods_buf);
 #endif
 
 // retired for now, since if makes freeing a temporary string harder.
-//#define ODS_RES(message) ODS(message, RevEnum(vk_enums.result_enum, result));
+#define ODS_RES(message) \
+RevEnum(vk_enums.result_enum, result); \
+ODS(message, revenum_buffer);
 
 
 

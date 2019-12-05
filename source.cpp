@@ -4,8 +4,7 @@
 #include <stdlib.h>
 #include <shlwapi.h>
 
-//#include "D:/RenderDoc/renderdoc_app.h"
-//RENDERDOC_API_1_1_2 *rdoc_api = NULL;
+
 
 // VULKANSSS
 #define VK_USE_PLATFORM_WIN32_KHR
@@ -45,7 +44,7 @@ void GetVulkanInstance(char **ext_names,   u32 ext_count,
     appinfo.applicationVersion = 0;
     appinfo.pEngineName        = "Toy RT Engine";
     appinfo.engineVersion      = 0;
-    appinfo.apiVersion         = VK_MAKE_VERSION(1, 1, 121);
+    appinfo.apiVersion         = VK_MAKE_VERSION(1, 1, 126);
     
     VkInstanceCreateInfo instance_ci = {};
     instance_ci.sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -59,9 +58,8 @@ void GetVulkanInstance(char **ext_names,   u32 ext_count,
     
     result = vkCreateInstance(&instance_ci, NULL, &vk.instance);
     
-    char *rev = RevEnum(vk_enums.result_enum, result);
-    ODS("Instance creation: %s\n", rev);
-    free(rev);
+    RevEnum(vk_enums.result_enum, result);
+    ODS_RES("Instance creation: %s\n");
 }
 
 
@@ -98,9 +96,8 @@ void SetupDebugging()
     debug_messenger_ci.pUserData       = NULL;
     
     result = vkCreateDebugUtilsMessengerEXT(vk.instance, &debug_messenger_ci, NULL, &vk.debug_messenger);
-    char *rev = RevEnum(vk_enums.result_enum, result);
-    ODS("Debug utils messenger creation: %s\n", rev);
-    free(rev);
+    RevEnum(vk_enums.result_enum, result);
+    ODS_RES("Debug utils messenger creation: %s\n");
 }
 
 
@@ -127,9 +124,8 @@ void CreateSurface()
     surface_ci.hwnd      = app.window;
     
     result = vkCreateWin32SurfaceKHR(vk.instance, &surface_ci, NULL, &vk.surface);
-    char *rev = RevEnum(vk_enums.result_enum, result);
-    ODS("Surface creation: %s\n", rev);
-    free(rev);
+    RevEnum(vk_enums.result_enum, result);
+    ODS_RES("Surface creation: %s\n");
 }
 void SetupQueue()
 {
@@ -442,9 +438,8 @@ void CreateCommandPool(VkCommandPool *command_pool)
     commandpool_ci.queueFamilyIndex = vk.queue_family_index;
     
     result = vkCreateCommandPool(vk.device, &commandpool_ci, NULL, &(*command_pool));
-    char *rev = RevEnum(vk_enums.result_enum, result);
-    ODS("Command pool result: %s\n", rev);
-    free(rev);
+    RevEnum(vk_enums.result_enum, result);
+    ODS_RES("Command pool result: %s\n");
 }
 
 void AllocateCommandBuffer(VkCommandPool command_pool, VkCommandBuffer *command_buffer)
@@ -457,9 +452,8 @@ void AllocateCommandBuffer(VkCommandPool command_pool, VkCommandBuffer *command_
     cb_ai.commandBufferCount = 1;
     
     result = vkAllocateCommandBuffers(vk.device, &cb_ai, &vk.cbuffer);
-    char *rev = RevEnum(vk_enums.result_enum, result);
-    ODS("Command buffer allocation: %s\n", rev);
-    free(rev);
+    RevEnum(vk_enums.result_enum, result);
+    ODS_RES("Command buffer allocation: %s\n");
 }
 
 
@@ -487,25 +481,18 @@ void SwapchainCreate()
     swapchain_ci.oldSwapchain          = NULL;
     
     result = vkCreateSwapchainKHR(vk.device, &swapchain_ci, NULL, &vk.swapchain);
-    char *rev = RevEnum(vk_enums.result_enum, result);
-    ODS("Swapchain result: %s\n", rev);
-    free(rev);
+    RevEnum(vk_enums.result_enum, result);
+    ODS_RES("Swapchain result: %s\n");
 }
 void GetSwapchainImages()
 {
     u32 swapchain_imagecount = 0;
     result = vkGetSwapchainImagesKHR(vk.device, vk.swapchain, &swapchain_imagecount, NULL);
-    
-    char *rev = RevEnum(vk_enums.result_enum, result);
-    ODS("Swapchain images(count): %s\n", rev);
-    free(rev);
+    ODS_RES("Swapchain images(count): %s\n");
     
     vk.swapchain_images = (VkImage *)malloc(sizeof(VkImage) * swapchain_imagecount);
     result = vkGetSwapchainImagesKHR(vk.device, vk.swapchain, &swapchain_imagecount, vk.swapchain_images);
-    
-    char *rev1 = RevEnum(vk_enums.result_enum, result);
-    ODS("Swapchain images(fill):  %s\n", rev1);
-    free(rev1);
+    ODS_RES("Swapchain images(fill):  %s\n");
 }
 
 void CreateSwapchainImageViews()
@@ -524,9 +511,7 @@ void CreateSwapchainImageViews()
     {
         imageview_ci.image = vk.swapchain_images[i];
         result = vkCreateImageView(vk.device, &imageview_ci, NULL, &vk.swapchain_imageviews[i]);
-        char *rev = RevEnum(vk_enums.result_enum, result);
-        ODS("Swapchain imageview result: %s\n", rev);
-        free(rev);
+        ODS_RES("Swapchain imageview result: %s\n");
     }
 }
 
@@ -676,11 +661,13 @@ void TransitImageLayout(VkImageLayout old_layout, VkImageLayout new_layout, VkIm
     ODS("Waiting on transit fence\n");
     vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
     result = vkGetFenceStatus(vk.device, fence);
-    char *rev = RevEnum(vk_enums.result_enum, result);
-    ODS("Transition fence result: %s\n", rev);
-    free(rev);
+    ODS_RES("Transition fence result: %s\n");
     
-    ODS("> %s -> %s\n", RevEnum(vk_enums.imagelayout_enum, old_layout), RevEnum(vk_enums.imagelayout_enum, new_layout));
+    char *oldlayoutstring = RevEnum_outstr(vk_enums.imagelayout_enum, old_layout);
+    char *newlayoutstring = RevEnum_outstr(vk_enums.imagelayout_enum, new_layout);
+    ODS("> %s -> %s\n", oldlayoutstring, newlayoutstring);
+    free(oldlayoutstring);
+    free(newlayoutstring);
     
     ODS("Resetting transit fence\n");
     vkResetFences(vk.device, 1, &fence);
@@ -690,28 +677,23 @@ void GetFormatAndColorspace()
 {
     u32 surface_formatcount = 0;
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(vk.gpu, vk.surface, &surface_formatcount, NULL);
-    char *rev = RevEnum(vk_enums.result_enum, result);
-    ODS("Surface formats(count): %s\n", rev);
-    free(rev);
+    RevEnum(vk_enums.result_enum, result);
+    ODS_RES("Surface formats(count): %s\n");
     VkSurfaceFormatKHR *surface_formats = (VkSurfaceFormatKHR *)malloc(sizeof(VkSurfaceFormatKHR) * surface_formatcount);
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(vk.gpu, vk.surface, &surface_formatcount, surface_formats);
     
-    char *rev1 = RevEnum(vk_enums.result_enum, result);
-    ODS("Surface formats(fill):  %s\n", rev1);
-    free(rev1);
+    RevEnum(vk_enums.result_enum, result);
+    ODS_RES("Surface formats(fill):  %s\n");
     
     ODS("> Surface formats:\n");
     for(u32 i = 0; i < surface_formatcount; i++)
     {
-        char *format      = RevEnum(vk_enums.format_enum, surface_formats[i].format);
-        char *color_space = RevEnum(vk_enums.colorspace_enum, surface_formats[i].colorSpace);
+        RevEnum(vk_enums.format_enum, surface_formats[i].format);
+        RevEnum(vk_enums.colorspace_enum, surface_formats[i].colorSpace);
         
         ODS("FormatKHR %d:\n", i);
-        ODS("- format:      %s\n", format);      // var and free
-        ODS("- color space: %s\n", color_space);  // var and free
-        
-        free(format);
-        free(color_space);
+        ODS_RES("- format:      %s\n");      // var and free
+        ODS_RES("- color space: %s\n");  // var and free
     }
     ODS("\n");
     
@@ -746,9 +728,8 @@ void CheckSurfaceCapabilities()
 {
     VkSurfaceCapabilitiesKHR surface_caps;
     result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vk.gpu, vk.surface, &surface_caps);
-    char *rev = RevEnum(vk_enums.result_enum, result);
-    ODS("Physical device surface capabilities result: %s\n", rev);
-    free(rev);
+    RevEnum(vk_enums.result_enum, result);
+    ODS_RES("Physical device surface capabilities result: %s\n");
     
     char *supported_transforms      = DecToBin(surface_caps.supportedTransforms);
     char *current_transforms        = DecToBin(surface_caps.currentTransform);
@@ -778,32 +759,26 @@ void SetPresentMode()
 {
     u32 present_modecount;
     result = vkGetPhysicalDeviceSurfacePresentModesKHR(vk.gpu, vk.surface, &present_modecount, NULL);
-    char *rev = RevEnum(vk_enums.result_enum, result);
-    ODS("Surface formats(count): %s\n", rev);
-    free(rev);
+    RevEnum(vk_enums.result_enum, result);
+    ODS_RES("Surface formats(count): %s\n");
+    
     VkPresentModeKHR *present_modes = (VkPresentModeKHR *)malloc(sizeof(VkPresentModeKHR) * present_modecount);
     result = vkGetPhysicalDeviceSurfacePresentModesKHR(vk.gpu, vk.surface, &present_modecount, present_modes);
-    char *rev1 = RevEnum(vk_enums.result_enum, result);
-    ODS("Surface formats(fill):  %s\n", rev1);
-    free(rev1);
+    RevEnum(vk_enums.result_enum, result);
+    ODS_RES("Surface formats(fill):  %s\n");
     
     ODS("> Present modes:\n");
     for(u32 i = 0; i < present_modecount; i++)
     {
-        char *mode = RevEnum(vk_enums.presentmode_enum, present_modes[i]);
-        ODS("Mode %d: %s\n", i, mode);
+        RevEnum(vk_enums.presentmode_enum, present_modes[i]);
+        ODS("Mode %d: %s\n", i, revenum_buffer);
         
-        if(strstr(mode, "MAILBOX"))
+        if(strstr(revenum_buffer, "MAILBOX"))
             vk.present_mode = present_modes[i];
-        
-        free(mode);
     }
-    char *chosen_mode = RevEnum(vk_enums.presentmode_enum, vk.present_mode);
-    ODS("Chosen present mode: %s\n", chosen_mode);
+    RevEnum(vk_enums.presentmode_enum, vk.present_mode);
+    ODS_RES("Chosen present mode: %s\n");
     ODS("\n");
-    
-    free(present_modes);
-    free(chosen_mode);
 }
 
 void CreateImage(VkImage *image, VkDeviceMemory *memory,
@@ -850,9 +825,8 @@ void CreateImage(VkImage *image, VkDeviceMemory *memory,
                                              vk.gpu_memprops);
     
     result = vkAllocateMemory(vk.device, &mem_ai, NULL, memory);
-    char *rev = RevEnum(vk_enums.result_enum, result);
-    ODS("Memory allocation: %s\n", rev);
-    free(rev);
+    RevEnum(vk_enums.result_enum, result);
+    ODS_RES("Memory allocation: %s\n");
     
     vkBindImageMemory(vk.device, *image, *memory, 0);
     // ---
@@ -1096,9 +1070,7 @@ out_struct *CreateComputePipeline(in_struct *in)
     dspoolci.pPoolSizes    = &poolsize;
     //VkDescriptorPool dspool;
     result = vkCreateDescriptorPool(vk.device, &dspoolci, NULL, &out->pool);  // <--- crashes here without validation layers
-    char *rev = RevEnum(vk_enums.result_enum, result);
-    ODS("Compute pipeline descriptor pool creation: %s \n", rev);
-    free(rev);
+    ODS_RES("Compute pipeline descriptor pool creation: %s \n");
     
     
     u32 running_binding_index = 0;
@@ -1118,9 +1090,7 @@ out_struct *CreateComputePipeline(in_struct *in)
     dslayout_ci.bindingCount = in->resource_count;
     dslayout_ci.pBindings    = bindings;
     result = vkCreateDescriptorSetLayout(vk.device, &dslayout_ci, NULL, &out->pipe_dslayout);
-    char *rev1 = RevEnum(vk_enums.result_enum, result);
-    ODS("Compute pipeline descriptor set layout creation: %s \n", rev1);
-    free(rev1);
+    ODS_RES("Compute pipeline descriptor set layout creation: %s \n");
     
     
     VkPipelineLayoutCreateInfo layout_ci = {};
@@ -1145,9 +1115,7 @@ out_struct *CreateComputePipeline(in_struct *in)
         layout_ci.pPushConstantRanges    = NULL;
     }
     result = vkCreatePipelineLayout(vk.device, &layout_ci, NULL, &out->pipe_layout);  // <--- crashes here with them
-    char *rev2 = RevEnum(vk_enums.result_enum, result);
-    ODS("Compute pipeline layout creation: %s \n", rev2);
-    free(rev2);
+    ODS_RES("Compute pipeline layout creation: %s \n");
     
     
     
@@ -1179,9 +1147,7 @@ out_struct *CreateComputePipeline(in_struct *in)
     dsai.descriptorSetCount = 1;
     dsai.pSetLayouts        = &out->pipe_dslayout;
     result = vkAllocateDescriptorSets(vk.device, &dsai, &out->pipe_dset);
-    char *rev3 = RevEnum(vk_enums.result_enum, result);
-    ODS("Descriptor set allocation: %s \n", rev3);
-    free(rev3);
+    ODS_RES("Descriptor set allocation: %s \n");
     
     out->descwrite_count = in->resource_count;
     out->descwrites = (VkWriteDescriptorSet *)calloc(out->descwrite_count, sizeof(VkWriteDescriptorSet));
@@ -1227,9 +1193,7 @@ out_struct *CreateComputePipeline_v2(in_struct_v2 *in)
     dspoolci.poolSizeCount = 2;
     dspoolci.pPoolSizes    = poolsizes;
     result = vkCreateDescriptorPool(vk.device, &dspoolci, NULL, &out->pool);
-    char *rev = RevEnum(vk_enums.result_enum, result);
-    ODS("Compute pipeline descriptor pool creation: %s \n", rev);
-    free(rev);
+    ODS_RES("Compute pipeline descriptor pool creation: %s \n");
     
     
     VkDescriptorSetLayoutBinding *bindings = (VkDescriptorSetLayoutBinding *)calloc(in->resource_count+in->imageresource_count, sizeof(VkDescriptorSetLayoutBinding));
@@ -1259,9 +1223,7 @@ out_struct *CreateComputePipeline_v2(in_struct_v2 *in)
     dslayout_ci.bindingCount = in->resource_count+in->imageresource_count;
     dslayout_ci.pBindings    = bindings;
     result = vkCreateDescriptorSetLayout(vk.device, &dslayout_ci, NULL, &out->pipe_dslayout);
-    char *rev1 = RevEnum(vk_enums.result_enum, result);
-    ODS("Compute pipeline descriptor set layout creation: %s \n", rev1);
-    free(rev1);
+    ODS_RES("Compute pipeline descriptor set layout creation: %s \n");
     
     
     VkPipelineLayoutCreateInfo layout_ci = {};
@@ -1286,9 +1248,7 @@ out_struct *CreateComputePipeline_v2(in_struct_v2 *in)
         layout_ci.pPushConstantRanges    = NULL;
     }
     result = vkCreatePipelineLayout(vk.device, &layout_ci, NULL, &out->pipe_layout);
-    char *rev2 = RevEnum(vk_enums.result_enum, result);
-    ODS("Compute pipeline layout creation: %s \n", rev2);
-    free(rev2);
+    ODS_RES("Compute pipeline layout creation: %s \n");
     
     
     
@@ -1319,9 +1279,7 @@ out_struct *CreateComputePipeline_v2(in_struct_v2 *in)
     dsai.descriptorSetCount = 1;
     dsai.pSetLayouts        = &out->pipe_dslayout;
     result = vkAllocateDescriptorSets(vk.device, &dsai, &out->pipe_dset);
-    char *rev3 = RevEnum(vk_enums.result_enum, result);
-    ODS("Descriptor set allocation: %s \n", rev3);
-    free(rev3);
+    ODS_RES("Descriptor set allocation: %s \n");
     
     out->descwrite_count = in->resource_count + in->imageresource_count;
     out->descwrites = (VkWriteDescriptorSet *)calloc(out->descwrite_count, sizeof(VkWriteDescriptorSet));
@@ -3591,21 +3549,13 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkEndCommandBuffer(commandbuffer);
     
     result = vkQueueSubmit(vk.queue, 1, &compute_si, fence);
-    char *rev = RevEnum(vk_enums.result_enum, result);
-    ODS("Execution: %s \n", rev);
-    free(rev);
+    ODS_RES("Execution: %s \n");
     result = vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
-    char *rev1 = RevEnum(vk_enums.result_enum, result);
-    ODS("Suspicious fence wait: %s \n", rev1);
-    free(rev1);
+    ODS_RES("Suspicious fence wait: %s \n");
     result = vkGetFenceStatus(vk.device, fence);
-    char *rev2 = RevEnum(vk_enums.result_enum, result);
-    ODS("Suspicious fence status: %s \n", rev2);
-    free(rev2);
+    ODS_RES("Suspicious fence status: %s \n");
     result = vkResetFences(vk.device, 1, &fence);
-    char *rev3 = RevEnum(vk_enums.result_enum, result);
-    ODS("Suspicious fence reset: %s \n", rev3);
-    free(rev3);
+    ODS_RES("Suspicious fence reset: %s \n");
     
     memcpy(tree_data, tree_mapptr, tree_datasize);
     vkUnmapMemory(vk.device, tree_memory);
@@ -4627,9 +4577,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     u32 present_index = 0;
     result = vkAcquireNextImageKHR(vk.device, vk.swapchain, UINT64_MAX, semaphore_acquired, NULL, &present_index);
-    char *rev4 = RevEnum(vk_enums.result_enum, result);
-    ODS("Acquisition result: %s\n", rev4);
-    free(rev4);
+    ODS_RES("Acquisition result: %s\n");
     
     vk.framebuffers = (VkFramebuffer *)calloc(2, sizeof(VkFramebuffer));
     
@@ -4728,9 +4676,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     si.pCommandBuffers      = &commandbuffer;
     vkQueueSubmit(vk.queue, 1, &si, fence_rendered);
     result = vkWaitForFences(vk.device, 1, &fence_rendered, VK_TRUE, UINT64_MAX);
-    char *rev5 = RevEnum(vk_enums.result_enum, result);
-    ODS("Render wait result: %s\n", rev4);
-    free(rev5);
+    ODS_RES("Render wait result: %s\n");
     vkResetFences(vk.device, 1, &fence);
     
     
@@ -4744,9 +4690,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     pi.pImageIndices      = &present_index;
     pi.pResults           = &result;
     vkQueuePresentKHR(vk.queue, &pi);
-    char *rev6 = RevEnum(vk_enums.result_enum, result);
-    ODS("Present result: %s\n", rev6);
-    free(rev6);
+    ODS_RES("Present result: %s\n");
     
     MSG msg;
     bool done = false;
@@ -4765,6 +4709,8 @@ int CALLBACK WinMain(HINSTANCE instance,
         //DataProcessing();
         RedrawWindow(app.window, NULL, NULL, RDW_INTERNALPAINT);
     }
+    
+    free(revenum_buffer);
     
     return msg.wParam;
 }

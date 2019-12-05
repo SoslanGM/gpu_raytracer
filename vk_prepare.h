@@ -1,4 +1,9 @@
 
+
+char *revenum_buffer = (char *)malloc(1024 * sizeof(char));
+
+
+
 char *NumToString(int number, bool debugprint)
 {
     int sign = (number < 0) ? -1 : 1;
@@ -120,7 +125,7 @@ string *RetrieveEnum(char *filename, char *enum_name)
     
     return result;
 }
-char *RetrieveVkEnumString(string *vkenumbuffer, u32 enumvalue, bool debugprint)
+void RetrieveVkEnumString(string *vkenumbuffer, u32 enumvalue, bool debugprint)
 {
     bool deb = false;
     
@@ -147,7 +152,52 @@ char *RetrieveVkEnumString(string *vkenumbuffer, u32 enumvalue, bool debugprint)
         printf("token length: %d\n", token.length);
     }
     
-    char *result = (char *)malloc(sizeof(char) * (token.length + 1));
+    // what if this memcpy blows the THOUSAND TWENTY FOUR chars out
+    memcpy(revenum_buffer, token.text, token.length);
+    revenum_buffer[token.length] = terminator;
+    
+    if(deb)
+        printf("string length: %d\n", length);
+}
+void RevEnum(string *enum_buffer, s32 value, bool debugprint)
+{
+    RetrieveVkEnumString(enum_buffer, value, debugprint);
+}
+void RevEnum(string *enum_buffer, s32 value)
+{
+    bool debugprint = false;
+    RetrieveVkEnumString(enum_buffer, value, debugprint);
+}
+
+char *RetrieveVkEnumString_outstr(string *vkenumbuffer, u32 enumvalue, bool debugprint)
+{
+    bool deb = false;
+    
+    char *valuestring = NumToString(enumvalue, debugprint);
+    if(debugprint)
+        printf("value: %s\n", valuestring);
+    
+    int length = 0;
+    char *enumstring = FindLine(vkenumbuffer->ptr, &length, valuestring);
+    
+    free(valuestring);
+    
+    Tokenizer.At = enumstring;
+    Token token = GetToken();
+    
+    if(token.length < 0)
+    {
+        ODS("Strange token length bug\n");
+    }
+    
+    if(deb)
+    {
+        printf("token text:   %.*s\n", token.length, token.text);
+        printf("token length: %d\n", token.length);
+    }
+    
+    // what if this memcpy blows the THOUSAND TWENTY FOUR chars out
+    char *result = (char *)malloc((token.length + 1) * sizeof(char));
     strncpy(result, token.text, token.length);
     result[token.length] = terminator;
     
@@ -156,14 +206,14 @@ char *RetrieveVkEnumString(string *vkenumbuffer, u32 enumvalue, bool debugprint)
     
     return result;
 }
-char *RevEnum(string *enum_buffer, s32 value, bool debugprint)
+char *RevEnum_outstr(string *enum_buffer, s32 value, bool debugprint)
 {
-    return RetrieveVkEnumString(enum_buffer, value, debugprint);
+    return RetrieveVkEnumString_outstr(enum_buffer, value, debugprint);
 }
-char *RevEnum(string *enum_buffer, s32 value)
+char *RevEnum_outstr(string *enum_buffer, s32 value)
 {
     bool debugprint = false;
-    return RetrieveVkEnumString(enum_buffer, value, debugprint);
+    return RetrieveVkEnumString_outstr(enum_buffer, value, debugprint);
 }
 
 
@@ -211,17 +261,12 @@ void EnumerateGlobalExtensions()
     u32 global_propscount;
     result = vkEnumerateInstanceExtensionProperties(NULL, &global_propscount, NULL);
     
-    char *rev = RevEnum(vk_enums.result_enum, result);
-    ODS("Instance extension props(count): %s\n", rev);
-    free(rev);
+    ODS_RES("Instance extension props(count): %s\n");
     
     VkExtensionProperties *global_props = (VkExtensionProperties *)malloc(sizeof(VkExtensionProperties) * global_propscount);
     result = vkEnumerateInstanceExtensionProperties(NULL, &global_propscount, global_props);
     
-    char *rev1 = RevEnum(vk_enums.result_enum, result);
-    ODS("Instance extension props(fill):  %s\n", rev1);
-    free(rev1);
-    
+    ODS_RES("Instance extension props(fill):  %s\n");
     
     ODS("\n> Instance-wide extensions: %d\n", global_propscount);
     for(u32 i = 0; i < global_propscount; i++)
@@ -242,16 +287,14 @@ void EnumerateLayerExtensions()
     u32 layer_count = 0;
     result = vkEnumerateInstanceLayerProperties(&layer_count, NULL);
     
-    char *rev = RevEnum(vk_enums.result_enum, result);
-    ODS("Instance layer props(count): %s\n", rev);
-    free(rev);
+    RevEnum(vk_enums.result_enum, result);
+    ODS_RES("Instance layer props(count): %s\n");
     
     VkLayerProperties *layer_props = (VkLayerProperties *)malloc(sizeof(VkLayerProperties) * layer_count);
     result = vkEnumerateInstanceLayerProperties(&layer_count, layer_props);
     
-    char *rev1 = RevEnum(vk_enums.result_enum, result);
-    ODS("Instance layer props(fill):  %s\n", rev1);
-    free(rev1);
+    RevEnum(vk_enums.result_enum, result);
+    ODS_RES("Instance layer props(fill):  %s\n");
     
     ODS("\n> Instance layers: %d\n", layer_count);
     for(u32 i = 0; i < layer_count; i++)

@@ -3,6 +3,12 @@
 IF NOT EXIST ..\build\ mkdir ..\build
 pushd ..\build
 
+:: A little optimisation for the future:
+:: - source.cpp at the top
+:: - new shaders at the top
+:: just so you don't have to wait to know whether the compile is gonna be successful or not :D
+
+
 ::glslangValidator -V ..\code\shader.comp -o ..\code\shader_comp.spv
 ::glslangValidator -H ..\code\minmax.comp -o ..\code\minmax_comp.spv > ..\code\asm.txt
 glslangValidator -V ..\code\minmax.comp -o ..\code\minmax_comp.spv
