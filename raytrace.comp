@@ -43,19 +43,6 @@ vec4 light_color  = vec4(1.0, 1.0,  1.0,  1.0);
 // if the big box isn't hit, skip.
 // otherwise keep checking for intersections.
 
-#if 0
-struct triangle
-{
-    vec3 v0;
-    vec3 v1;
-    vec3 v2;
-};
-triangle RetrieveTriangle(uint triangle_index)
-{
-    
-}
-#endif
-
 struct ray
 {
     vec3 o;
@@ -238,18 +225,9 @@ poly FetchTri(int index)
 
 
 
-#if 0
-float cam_x = 0.5;
-float cam_y = 0.25;
-float cam_z = 2.5;
-#endif
-
-#if 1
 float cam_x = 0.0;
 float cam_y = 0.0;
 float cam_z = 25.0;
-#endif
-
 
 
 int stack_counter = 0;
@@ -266,23 +244,21 @@ tri_record RayTri(ray r, poly tri)
     tri_record rec;
     
     vec3 n_plane = normalize(cross(tri.v1-tri.v0, tri.v2-tri.v0));
-    //vec3 n = tri.n2;
     
     // if the ray is parallel to the triangle, we're not interested
-#if 1
     if(dot(r.d, n_plane) == 0)
     {
         rec.t = t_max;
         rec.n = n_plane;
         return rec;
     }
-#endif
+    
+    
     
     // last component of the plane's equation:
     float d = -dot(n_plane, tri.v0);
     
     float t = - (dot(n_plane, r.o) + d) / dot(n_plane, r.d);
-    //float t = (dot(n, r.o) + d)/dot(n, r.o-r.d);  // with (1-t) before o. Which makes no sense :P
     
     
     // - Now let's see if the point belongs to the triangle.
@@ -312,7 +288,6 @@ tri_record RayTri(ray r, poly tri)
 struct hit_record
 {
     float t;
-    // vec3 normal;
     vec4 color;
 };
 hit_record Trace(ray r, int node)

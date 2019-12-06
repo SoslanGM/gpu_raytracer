@@ -539,6 +539,8 @@ void TransitImageLayout(VkImageLayout old_layout, VkImageLayout new_layout, VkIm
                         u32 wait_semaphore_count,   VkSemaphore *wait_semaphores,
                         u32 signal_semaphore_count, VkSemaphore *signal_semaphores)
 {
+#define debug 0
+    
     VkImageMemoryBarrier barrier = {};
     barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.pNext               = NULL;
@@ -572,24 +574,36 @@ void TransitImageLayout(VkImageLayout old_layout, VkImageLayout new_layout, VkIm
     vkEndCommandBuffer(command_buffer);
     vkQueueSubmit(queue, 1, &queue_si, fence);
     
+#if debug    
     ODS("Waiting on transit fence\n");
+#endif
     vkWaitForFences(vk.device, 1, &fence, VK_TRUE, UINT64_MAX);
     result = vkGetFenceStatus(vk.device, fence);
+#if debug    
     ODS_RES("Transition fence result: %s\n");
+#endif
     
     char *oldlayoutstring = RevEnum_outstr(vk_enums.imagelayout_enum, old_layout);
     char *newlayoutstring = RevEnum_outstr(vk_enums.imagelayout_enum, new_layout);
+#if debug
     ODS("> %s -> %s\n", oldlayoutstring, newlayoutstring);
+#endif
     free(oldlayoutstring);
     free(newlayoutstring);
     
+#if debug
     ODS("Resetting transit fence\n");
+#endif
     vkResetFences(vk.device, 1, &fence);
 }
 
 
+
+
+
 void Render()
 {
+#define debug 0
     u32 xdim = ceil(r32(app.window_width)  / 32.0f);
     u32 ydim = ceil(r32(app.window_height) / 32.0f);
     
@@ -644,7 +658,9 @@ void Render()
     
     u32 present_index = 0;
     result = vkAcquireNextImageKHR(vk.device, vk.swapchain, UINT64_MAX, vk.semaphore_acquired, NULL, &present_index);
+#if debug
     ODS_RES("Acquisition result: %s\n");
+#endif
     
     
     
@@ -704,7 +720,9 @@ void Render()
     si.pCommandBuffers      = &vk.commandbuffer;
     vkQueueSubmit(vk.queue, 1, &si, fence_rendered);
     result = vkWaitForFences(vk.device, 1, &fence_rendered, VK_TRUE, UINT64_MAX);
+#if debug
     ODS_RES("Render wait result: %s\n");
+#endif
     
     
     VkPresentInfoKHR pi = {};
@@ -717,7 +735,9 @@ void Render()
     pi.pImageIndices      = &present_index;
     pi.pResults           = &result;
     vkQueuePresentKHR(vk.queue, &pi);
+#if debug
     ODS_RES("Present result: %s\n");
+#endif
     
     vkQueueWaitIdle(vk.queue);
     
@@ -1674,6 +1694,11 @@ bool RayBox(ray r, AABB_padded b, r32 *t_result)
     }
     return result;
 }
+
+
+u64 time_framestart;
+u64 time_elapsed;
+u32 frame_counter = 0;
 
 #define RD 0 
 
@@ -4721,6 +4746,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkUnmapMemory(vk.device, index_memory);
     
     
+    time_framestart = TimerRead();
     
     MSG msg;
     bool done = false;
@@ -4738,6 +4764,14 @@ int CALLBACK WinMain(HINSTANCE instance,
         //InputProcessing();
         //DataProcessing();
         RedrawWindow(app.window, NULL, NULL, RDW_INTERNALPAINT);
+        
+        time_elapsed = TimerElapsedFrom(time_framestart, MICROSECONDS);
+        string *timer = TimerString(time_elapsed);
+        ODS("Frame %d %.*s \n", frame_counter, timer->length, timer->ptr);
+        frame_counter++;
+        FreeString(timer);
+        
+        time_framestart = TimerRead();
     }
     
     free(revenum_buffer);

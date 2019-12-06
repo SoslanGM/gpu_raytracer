@@ -74,6 +74,12 @@ string *String(char *str)
     
     return result;
 }
+// TO DO: FreeString();
+void FreeString(string *s)
+{
+    free(s->ptr);
+    free(s);
+}
 
 typedef struct
 {
