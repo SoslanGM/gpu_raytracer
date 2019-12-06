@@ -594,6 +594,13 @@ void Render()
     u32 ydim = ceil(r32(app.window_height) / 32.0f);
     
     
+    // transit compute image from shader_read_only to general
+    TransitImageLayout(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, vk.computed_image,
+                       vk.queue, vk.commandbuffer, vk.fence,
+                       0, NULL,
+                       0, NULL);
+    
+    
     vkUpdateDescriptorSets(vk.device, raytracing.ray_out->descwrite_count, raytracing.ray_out->descwrites, 0, NULL);
     
     vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
@@ -607,6 +614,12 @@ void Render()
     vkResetFences(vk.device, 1, &vk.fence);
     
     
+    
+    // transit compute image from general to read_only optimal
+    TransitImageLayout(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, vk.computed_image,
+                       vk.queue, vk.commandbuffer, vk.fence,
+                       0, NULL,
+                       0, NULL);
     
     
     
@@ -708,7 +721,7 @@ void Render()
     
     vkQueueWaitIdle(vk.queue);
     
-    // transit from present_src_khr to color_attachment_optimal
+    // transit swapchain image from present_src_khr to color_attachment_optimal
     TransitImageLayout(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, vk.swapchain_images[present_index],
                        vk.queue, vk.commandbuffer, vk.fence,
                        0, NULL,
@@ -1968,14 +1981,14 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     // Compute
     // - prepare a render target
-    VkImage computed_image;
+    //VkImage computed_image;
     //VkImageView computed_imageview;
     VkDeviceMemory computed_imagememory;
     
-    CreateImage(&computed_image, &computed_imagememory, app.window_width, app.window_height,
+    CreateImage(&vk.computed_image, &computed_imagememory, app.window_width, app.window_height,
                 VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_SAMPLED_BIT,
                 VK_IMAGE_LAYOUT_UNDEFINED, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    CreateImageView(&computed_image, &vk.computed_imageview);
+    CreateImageView(&vk.computed_image, &vk.computed_imageview);
     
     VkImageMemoryBarrier barrier = {};
     barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -1984,7 +1997,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     barrier.dstAccessMask       = VK_ACCESS_HOST_WRITE_BIT;
     barrier.oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
     barrier.newLayout           = VK_IMAGE_LAYOUT_GENERAL;
-    barrier.image               = computed_image;
+    barrier.image               = vk.computed_image;
     barrier.subresourceRange    = vk.color_sr;
     
     vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
@@ -4337,23 +4350,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
-#if 0    
-    u32 xdim = ceil(r32(app.window_width)  / 32.0f);
-    u32 ydim = ceil(r32(app.window_height) / 32.0f);
-    
-    vkUpdateDescriptorSets(vk.device, ray_out->descwrite_count, ray_out->descwrites, 0, NULL);
-    
-    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
-    vkCmdBindDescriptorSets(vk.commandbuffer, pipeline_bindpoint, ray_out->pipe_layout, 0, 1, &ray_out->pipe_dset, 0, NULL);
-    vkCmdBindPipeline(vk.commandbuffer, pipeline_bindpoint, ray_out->pipe);
-    vkCmdDispatch(vk.commandbuffer, xdim, ydim, 1);
-    vkEndCommandBuffer(vk.commandbuffer);
-    
-    vkQueueSubmit(vk.queue, 1, &vk.compute_si, vk.fence);
-    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
-    vkResetFences(vk.device, 1, &vk.fence);
-#endif
-    
     
     
     // ---
@@ -4662,48 +4658,9 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
-    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    barrier.image = computed_image;
-    
-    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
-    vkCmdPipelineBarrier(vk.commandbuffer,
-                         VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_HOST_BIT,
-                         0,
-                         0, NULL,
-                         0, NULL,
-                         1, &barrier);
-    vkEndCommandBuffer(vk.commandbuffer);
-    vkQueueSubmit(vk.queue, 1, &transit_si, vk.fence);
-    
-    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
-    vkResetFences(vk.device, 1, &vk.fence);
-    
-    
-    
     
     //VkSampler sampler;
     CreateSampler(&vk.sampler);
-    
-#if 0
-    VkDescriptorImageInfo computed_image_info = {};
-    computed_image_info.sampler     = sampler;
-    computed_image_info.imageView   = computed_imageview;
-    computed_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    
-    VkWriteDescriptorSet descriptor_write = {};
-    descriptor_write.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptor_write.pNext            = NULL;
-    descriptor_write.dstSet           = vk.descriptorset;
-    descriptor_write.dstBinding       = 0;
-    descriptor_write.dstArrayElement  = 0;
-    descriptor_write.descriptorCount  = 1;
-    descriptor_write.descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptor_write.pImageInfo       = &computed_image_info;
-    descriptor_write.pBufferInfo      = NULL;
-    descriptor_write.pTexelBufferView = NULL;
-    vkUpdateDescriptorSets(vk.device, 1, &descriptor_write, 0, NULL);
-#endif
     
     
     
@@ -4717,31 +4674,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
-#if 0    
-    u32 present_index = 0;
-    result = vkAcquireNextImageKHR(vk.device, vk.swapchain, UINT64_MAX, semaphore_acquired, NULL, &present_index);
-    ODS_RES("Acquisition result: %s\n");
-#endif
-    
     vk.framebuffers = (VkFramebuffer *)calloc(2, sizeof(VkFramebuffer));
     
-    
-#if 0
-    VkFramebufferCreateInfo framebuffer_ci = {};
-    framebuffer_ci.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebuffer_ci.pNext           = NULL;
-    framebuffer_ci.flags           = 0;
-    framebuffer_ci.renderPass      = renderpass;
-    framebuffer_ci.attachmentCount = 1;
-    framebuffer_ci.width           = app.window_width;
-    framebuffer_ci.height          = app.window_height;
-    framebuffer_ci.layers          = 1;
-    for(u32 i = 0; i < 2; i++)
-    {
-        framebuffer_ci.pAttachments = &vk.swapchain_imageviews[i];
-        vkCreateFramebuffer(vk.device, &framebuffer_ci, NULL, &vk.framebuffers[i]);
-    }
-#endif
     
     
     
@@ -4786,61 +4720,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     memcpy(index_mapptr, indexes, sizeof(u32) * sizeof(indexes));
     vkUnmapMemory(vk.device, index_memory);
     
-    
-#if 0    
-    VkClearValue clear_color = { 1.0f, 0.4f, 0.7f, 1.0f };
-    
-    VkRenderPassBeginInfo renderpass_bi = {};
-    renderpass_bi.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderpass_bi.pNext           = NULL;
-    renderpass_bi.renderPass      = renderpass;
-    renderpass_bi.framebuffer     = vk.framebuffers[present_index];
-    renderpass_bi.renderArea      = scissor;
-    renderpass_bi.clearValueCount = 1;
-    renderpass_bi.pClearValues    = &clear_color;
-    
-    
-    VkDeviceSize offset = 0;
-    
-    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
-    vkCmdBindVertexBuffers(vk.commandbuffer, 0, 1, &vertex_buffer, &offset);
-    vkCmdBindIndexBuffer(vk.commandbuffer, index_buffer, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdBindPipeline(vk.commandbuffer, bindpoint_graphics, vk.graphice_pipeline);
-    vkCmdBindDescriptorSets(vk.commandbuffer, bindpoint_graphics, vk.pipelinelayout, 0, 1, &vk.descriptorset, 0, NULL);
-    vkCmdBeginRenderPass(vk.commandbuffer, &renderpass_bi, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdDrawIndexed(vk.commandbuffer, 6, 1, 0, 0, 0);
-    vkCmdEndRenderPass(vk.commandbuffer);
-    vkEndCommandBuffer(vk.commandbuffer);
-    
-    
-    VkFence fence_rendered;
-    vkCreateFence(vk.device, &fence_ci, NULL, &fence_rendered);
-    
-    VkPipelineStageFlags waitmask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-    
-    VkSubmitInfo si = {};
-    si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    si.pNext                = NULL;
-    si.pWaitDstStageMask    = &waitmask;
-    si.commandBufferCount   = 1;
-    si.pCommandBuffers      = &vk.commandbuffer;
-    vkQueueSubmit(vk.queue, 1, &si, fence_rendered);
-    result = vkWaitForFences(vk.device, 1, &fence_rendered, VK_TRUE, UINT64_MAX);
-    ODS_RES("Render wait result: %s\n");
-    vkResetFences(vk.device, 1, &vk.fence);
-    
-    VkPresentInfoKHR pi = {};
-    pi.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    pi.pNext              = NULL;
-    pi.waitSemaphoreCount = 1;
-    pi.pWaitSemaphores    = &semaphore_acquired;
-    pi.swapchainCount     = 1;
-    pi.pSwapchains        = &vk.swapchain;
-    pi.pImageIndices      = &present_index;
-    pi.pResults           = &result;
-    vkQueuePresentKHR(vk.queue, &pi);
-    ODS_RES("Present result: %s\n");
-#endif
     
     
     MSG msg;

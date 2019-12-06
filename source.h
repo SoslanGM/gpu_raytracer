@@ -145,6 +145,7 @@ struct
     
     VkSampler sampler;
     
+    VkImage computed_image;
     VkImageView computed_imageview;
     
     VkRect2D scissor;
