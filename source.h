@@ -143,13 +143,21 @@ struct
     VkSemaphoreCreateInfo sem_ci;
     VkSemaphore semaphore_acquired;
     
+    VkSampler sampler;
+    
+    VkImageView computed_imageview;
+    
     VkRect2D scissor;
+    VkViewport viewport;
+    
     VkPipelineBindPoint bindpoint_graphics = VK_PIPELINE_BIND_POINT_GRAPHICS;
     VkPipelineBindPoint bindpoint_compute  = VK_PIPELINE_BIND_POINT_COMPUTE;
     
     VkPipeline graphics_pipeline;
     VkPipelineLayout pipelinelayout;
     VkDescriptorSet descriptorset;
+    
+    VkSubmitInfo compute_si;
     
     VkFenceCreateInfo fence_ci;
     VkFence fence;
@@ -174,9 +182,53 @@ struct
     u32 window_height;
 } app;
 
+
+typedef struct
+{
+    VkDescriptorType type;
+    VkBuffer buffer;
+    VkDeviceMemory memory;
+} resource_record;
+typedef struct
+{
+    VkDescriptorType type;
+    VkImageView imageview;
+} imageresource_record;
+typedef struct
+{
+    string *shader_file;
+    u32 resource_count;
+    resource_record *resources;
+    u32 pcr_size;
+    u32 *pcr_data;  // u32 or r32 isn't important, important is the size of 4 bytes
+} in_struct;
+typedef struct
+{
+    string *shader_file;
+    u32 resource_count;
+    resource_record *resources;
+    u32 imageresource_count;
+    imageresource_record *imageresources;
+    
+    u32 pcr_size;
+    u32 *pcr_data;  // u32 or r32 isn't important, important is the size of 4 bytes
+} in_struct_v2;
+typedef struct
+{
+    u32 descwrite_count;
+    VkWriteDescriptorSet *descwrites;
+    VkDescriptorPool pool;
+    VkShaderModule module;
+    VkDescriptorSet pipe_dset;
+    VkDescriptorSetLayout pipe_dslayout;
+    VkPipelineLayout pipe_layout;
+    VkPipeline pipe;
+} out_struct;
+
 struct
 {
-    
+    in_struct_v2 *ray_in;
+    out_struct *ray_out;
 } raytracing;
 
 struct

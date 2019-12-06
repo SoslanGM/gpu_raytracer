@@ -590,6 +590,45 @@ void TransitImageLayout(VkImageLayout old_layout, VkImageLayout new_layout, VkIm
 
 void Render()
 {
+    u32 xdim = ceil(r32(app.window_width)  / 32.0f);
+    u32 ydim = ceil(r32(app.window_height) / 32.0f);
+    
+    
+    vkUpdateDescriptorSets(vk.device, raytracing.ray_out->descwrite_count, raytracing.ray_out->descwrites, 0, NULL);
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdBindDescriptorSets(vk.commandbuffer, vk.bindpoint_compute, raytracing.ray_out->pipe_layout, 0, 1, &raytracing.ray_out->pipe_dset, 0, NULL);
+    vkCmdBindPipeline(vk.commandbuffer, vk.bindpoint_compute, raytracing.ray_out->pipe);
+    vkCmdDispatch(vk.commandbuffer, xdim, ydim, 1);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &vk.compute_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+    
+    
+    
+    
+    
+    VkDescriptorImageInfo computed_image_info = {};
+    computed_image_info.sampler     = vk.sampler;
+    computed_image_info.imageView   = vk.computed_imageview;
+    computed_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    
+    VkWriteDescriptorSet descriptor_write = {};
+    descriptor_write.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptor_write.pNext            = NULL;
+    descriptor_write.dstSet           = vk.descriptorset;
+    descriptor_write.dstBinding       = 0;
+    descriptor_write.dstArrayElement  = 0;
+    descriptor_write.descriptorCount  = 1;
+    descriptor_write.descriptorType   = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptor_write.pImageInfo       = &computed_image_info;
+    descriptor_write.pBufferInfo      = NULL;
+    descriptor_write.pTexelBufferView = NULL;
+    vkUpdateDescriptorSets(vk.device, 1, &descriptor_write, 0, NULL);
+    
+    
     u32 present_index = 0;
     result = vkAcquireNextImageKHR(vk.device, vk.swapchain, UINT64_MAX, vk.semaphore_acquired, NULL, &present_index);
     ODS_RES("Acquisition result: %s\n");
@@ -1104,6 +1143,7 @@ bool CheckMortonSorting_Digit(u32 *data, u32 count, u32 digit)
 
 
 
+#if 0
 typedef struct
 {
     VkDescriptorType type;
@@ -1145,6 +1185,7 @@ typedef struct
     VkPipelineLayout pipe_layout;
     VkPipeline pipe;
 } out_struct;
+#endif
 
 // v1
 out_struct *CreateComputePipeline(in_struct *in)
@@ -1928,13 +1969,13 @@ int CALLBACK WinMain(HINSTANCE instance,
     // Compute
     // - prepare a render target
     VkImage computed_image;
-    VkImageView computed_imageview;
+    //VkImageView computed_imageview;
     VkDeviceMemory computed_imagememory;
     
     CreateImage(&computed_image, &computed_imagememory, app.window_width, app.window_height,
                 VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_SAMPLED_BIT,
                 VK_IMAGE_LAYOUT_UNDEFINED, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    CreateImageView(&computed_image, &computed_imageview);
+    CreateImageView(&computed_image, &vk.computed_imageview);
     
     VkImageMemoryBarrier barrier = {};
     barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -2203,13 +2244,13 @@ int CALLBACK WinMain(HINSTANCE instance,
     // ---
     
     
-    VkSubmitInfo compute_si = {};
-    compute_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    compute_si.pNext                = NULL;
-    compute_si.pWaitDstStageMask    = &wait_stage_mask;
-    compute_si.commandBufferCount   = 1;
-    compute_si.pCommandBuffers      = &vk.commandbuffer;
-    vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+    //VkSubmitInfo compute_si = {};
+    vk.compute_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    vk.compute_si.pNext                = NULL;
+    vk.compute_si.pWaitDstStageMask    = &wait_stage_mask;
+    vk.compute_si.commandBufferCount   = 1;
+    vk.compute_si.pCommandBuffers      = &vk.commandbuffer;
+    vkQueueSubmit(vk.queue, 1, &vk.compute_si, vk.fence);
     vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
     vkResetFences(vk.device, 1, &vk.fence);
     
@@ -2574,7 +2615,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkEndCommandBuffer(vk.commandbuffer);
     
     // execution
-    vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+    vkQueueSubmit(vk.queue, 1, &vk.compute_si, vk.fence);
     vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
     vkResetFences(vk.device, 1, &vk.fence);
     
@@ -3141,7 +3182,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
         vkEndCommandBuffer(vk.commandbuffer);
         
-        vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+        vkQueueSubmit(vk.queue, 1, &vk.compute_si, vk.fence);
         vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
         vkResetFences(vk.device, 1, &vk.fence);
         
@@ -3217,7 +3258,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
         vkEndCommandBuffer(vk.commandbuffer);
         
-        vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+        vkQueueSubmit(vk.queue, 1, &vk.compute_si, vk.fence);
         vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
         vkResetFences(vk.device, 1, &vk.fence);
         
@@ -3302,7 +3343,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
         vkEndCommandBuffer(vk.commandbuffer);
         
-        vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+        vkQueueSubmit(vk.queue, 1, &vk.compute_si, vk.fence);
         vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
         vkResetFences(vk.device, 1, &vk.fence);
         
@@ -3366,7 +3407,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
         vkEndCommandBuffer(vk.commandbuffer);
         
-        vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+        vkQueueSubmit(vk.queue, 1, &vk.compute_si, vk.fence);
         vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
         vkResetFences(vk.device, 1, &vk.fence);
         
@@ -3430,7 +3471,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
         vkEndCommandBuffer(vk.commandbuffer);
         
-        vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+        vkQueueSubmit(vk.queue, 1, &vk.compute_si, vk.fence);
         vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
         vkResetFences(vk.device, 1, &vk.fence);
         
@@ -3471,7 +3512,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
         vkEndCommandBuffer(vk.commandbuffer);
         
-        vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+        vkQueueSubmit(vk.queue, 1, &vk.compute_si, vk.fence);
         vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
         vkResetFences(vk.device, 1, &vk.fence);
         
@@ -3504,7 +3545,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
         vkEndCommandBuffer(vk.commandbuffer);
         
-        vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+        vkQueueSubmit(vk.queue, 1, &vk.compute_si, vk.fence);
         vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
         vkResetFences(vk.device, 1, &vk.fence);
         
@@ -3642,7 +3683,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
     vkEndCommandBuffer(vk.commandbuffer);
     
-    result = vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+    result = vkQueueSubmit(vk.queue, 1, &vk.compute_si, vk.fence);
     ODS_RES("Execution: %s \n");
     result = vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
     ODS_RES("Suspicious fence wait: %s \n");
@@ -3874,7 +3915,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
     vkEndCommandBuffer(vk.commandbuffer);
     
-    vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+    vkQueueSubmit(vk.queue, 1, &vk.compute_si, vk.fence);
     vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
     vkResetFences(vk.device, 1, &vk.fence);
     
@@ -4167,7 +4208,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkCmdDispatch(vk.commandbuffer, blockcount, 1, 1);
     vkEndCommandBuffer(vk.commandbuffer);
     
-    vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+    vkQueueSubmit(vk.queue, 1, &vk.compute_si, vk.fence);
     vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
     vkResetFences(vk.device, 1, &vk.fence);
     
@@ -4259,40 +4300,44 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
-    in_struct_v2 *ray_in = (in_struct_v2 *)calloc(1, sizeof(in_struct_v2));
-    ray_in->shader_file = String("../code/raytrace.spv");
+    //in_struct_v2 *ray_in = (in_struct_v2 *)calloc(1, sizeof(in_struct_v2));
+    raytracing.ray_in = (in_struct_v2 *)calloc(1, sizeof(in_struct_v2));
+    raytracing.ray_in->shader_file = String("../code/raytrace.spv");
     
-    ray_in->resource_count = 4;
+    raytracing.ray_in->resource_count = 4;
     
-    ray_in->resources = (resource_record *)calloc(ray_in->resource_count, sizeof(resource_record));
-    ray_in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    ray_in->resources[0].memory = tree_memory;
-    ray_in->resources[0].buffer = tree_buffer;
-    ray_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    ray_in->resources[1].memory = bvh_memory;
-    ray_in->resources[1].buffer = bvh_buffer;
-    ray_in->resources[2].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    ray_in->resources[2].memory = model_index_memory;
-    ray_in->resources[2].buffer = model_index_buffer;
-    ray_in->resources[3].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    ray_in->resources[3].memory = model_vertex_memory;
-    ray_in->resources[3].buffer = model_vertex_buffer;
+    raytracing.ray_in->resources = (resource_record *)calloc(raytracing.ray_in->resource_count, sizeof(resource_record));
+    raytracing.ray_in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    raytracing.ray_in->resources[0].memory = tree_memory;
+    raytracing.ray_in->resources[0].buffer = tree_buffer;
+    raytracing.ray_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    raytracing.ray_in->resources[1].memory = bvh_memory;
+    raytracing.ray_in->resources[1].buffer = bvh_buffer;
+    raytracing.ray_in->resources[2].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    raytracing.ray_in->resources[2].memory = model_index_memory;
+    raytracing.ray_in->resources[2].buffer = model_index_buffer;
+    raytracing.ray_in->resources[3].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    raytracing.ray_in->resources[3].memory = model_vertex_memory;
+    raytracing.ray_in->resources[3].buffer = model_vertex_buffer;
     
-    ray_in->imageresource_count = 1;
-    ray_in->imageresources = (imageresource_record *)calloc(ray_in->imageresource_count, sizeof(imageresource_record));
-    ray_in->imageresources[0].type      = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    ray_in->imageresources[0].imageview = computed_imageview;
+    raytracing.ray_in->imageresource_count = 1;
+    raytracing.ray_in->imageresources = (imageresource_record *)calloc(raytracing.ray_in->imageresource_count, sizeof(imageresource_record));
+    raytracing.ray_in->imageresources[0].type      = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    raytracing.ray_in->imageresources[0].imageview = vk.computed_imageview;
     
-    ray_in->pcr_size = 1;
-    ray_in->pcr_data = (u32 *)calloc(bvh_in->pcr_size, sizeof(u32));
-    ray_in->pcr_data[0] = worksize-1;
+    raytracing.ray_in->pcr_size = 1;
+    //raytracing.ray_in->pcr_data = (u32 *)calloc(bvh_in->pcr_size, sizeof(u32));
+    raytracing.ray_in->pcr_data = (u32 *)calloc(1, sizeof(u32));
+    raytracing.ray_in->pcr_data[0] = worksize-1;
     
-    out_struct *ray_out = CreateComputePipeline_v2(ray_in);
+    //out_struct *ray_out = CreateComputePipeline_v2(ray_in);
+    raytracing.ray_out = CreateComputePipeline_v2(raytracing.ray_in);
     
     
     
     
     
+#if 0    
     u32 xdim = ceil(r32(app.window_width)  / 32.0f);
     u32 ydim = ceil(r32(app.window_height) / 32.0f);
     
@@ -4304,9 +4349,10 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkCmdDispatch(vk.commandbuffer, xdim, ydim, 1);
     vkEndCommandBuffer(vk.commandbuffer);
     
-    vkQueueSubmit(vk.queue, 1, &compute_si, vk.fence);
+    vkQueueSubmit(vk.queue, 1, &vk.compute_si, vk.fence);
     vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
     vkResetFences(vk.device, 1, &vk.fence);
+#endif
     
     
     
@@ -4441,28 +4487,28 @@ int CALLBACK WinMain(HINSTANCE instance,
     inputassembly_state.primitiveRestartEnable = NULL;
     
     
-    VkViewport viewport = {};
-    viewport.x        = 0;
-    viewport.y        = 0;
-    viewport.width    = app.window_width;
-    viewport.height   = app.window_height;
-    viewport.minDepth = 0;
-    viewport.maxDepth = 1;
+    //VkViewport viewport = {};
+    vk.viewport.x        = 0;
+    vk.viewport.y        = 0;
+    vk.viewport.width    = app.window_width;
+    vk.viewport.height   = app.window_height;
+    vk.viewport.minDepth = 0;
+    vk.viewport.maxDepth = 1;
     
-    VkRect2D scissor = {};
-    scissor.offset.x = 0;
-    scissor.offset.y = 0;
-    scissor.extent.width  = app.window_width;
-    scissor.extent.height = app.window_height;
+    //VkRect2D scissor = {};
+    vk.scissor.offset.x = 0;
+    vk.scissor.offset.y = 0;
+    vk.scissor.extent.width  = app.window_width;
+    vk.scissor.extent.height = app.window_height;
     
     VkPipelineViewportStateCreateInfo viewport_state = {};
     viewport_state.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     viewport_state.pNext         = NULL;
     viewport_state.flags         = 0;
     viewport_state.viewportCount = 1;
-    viewport_state.pViewports    = &viewport;
+    viewport_state.pViewports    = &vk.viewport;
     viewport_state.scissorCount  = 1;
-    viewport_state.pScissors     = &scissor;
+    viewport_state.pScissors     = &vk.scissor;
     
     
     VkPipelineRasterizationStateCreateInfo raster_state = {};
@@ -4636,9 +4682,10 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
-    VkSampler sampler;
-    CreateSampler(&sampler);
+    //VkSampler sampler;
+    CreateSampler(&vk.sampler);
     
+#if 0
     VkDescriptorImageInfo computed_image_info = {};
     computed_image_info.sampler     = sampler;
     computed_image_info.imageView   = computed_imageview;
@@ -4656,6 +4703,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     descriptor_write.pBufferInfo      = NULL;
     descriptor_write.pTexelBufferView = NULL;
     vkUpdateDescriptorSets(vk.device, 1, &descriptor_write, 0, NULL);
+#endif
     
     
     
