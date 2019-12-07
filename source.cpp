@@ -1696,6 +1696,50 @@ bool RayBox(ray r, AABB_padded b, r32 *t_result)
 }
 
 
+
+
+
+
+
+void StageBuffer(VkBuffer buffer, float *data, u64 size)
+{
+    memcpy(vk.staging_mapptr, data, size);
+    
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, buffer, vk.staging_buffer, 1, &vk.staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 u64 time_framestart;
 u64 time_elapsed;
 u32 frame_counter = 0;
@@ -1919,7 +1963,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     }
     
     
-    u32 compute_bufsize = model_tricount;
+    //u32 compute_bufsize = model_tricount;
     
     r32 x_max, x_min, y_max, y_min, z_max, z_min;
     x_max =  y_max =  z_max = -10000.0f;
@@ -1946,54 +1990,74 @@ int CALLBACK WinMain(HINSTANCE instance,
     ODS("Y: [ %+-7.3f | %+-7.3f ]\n", y_min, y_max);
     ODS("Z: [ %+-7.3f | %+-7.3f ]\n", z_min, z_max);
     
-    r64 CPU_time_elapsed_s  = TimerElapsedFrom(CPU_calc_start, SECONDS);
-    r64 CPU_time_elapsed_ms = TimerElapsedFrom(CPU_calc_start, MILLISECONDS);
-    r64 CPU_time_elapsed_us = TimerElapsedFrom(CPU_calc_start, MICROSECONDS);
-    r64 CPU_time_elapsed_ns = TimerElapsedFrom(CPU_calc_start, NANOSECONDS);
     
-    ODS("s:  %f\nms: %f\nus: %f\nns: %f\n", CPU_time_elapsed_s, CPU_time_elapsed_ms, CPU_time_elapsed_us, CPU_time_elapsed_ns);
-    
+    u64 cpu_minmax_time = TimerElapsedFrom(CPU_calc_start, MICROSECONDS);
+    string *cpu_minmax_str = TimerString(cpu_minmax_time);
+    ODS("Minmax on CPU done in: %.*s \n", cpu_minmax_str->length, cpu_minmax_str->ptr);
+    FreeString(cpu_minmax_str);
     
     
-    VkDeviceMemory xs_memory;
-    VkDeviceMemory ys_memory;
-    VkDeviceMemory zs_memory;
+    
+    // - Minmax: GPU execution
+    
+    u32 worksize = model_tricount;
     
     VkPhysicalDeviceMemoryProperties gpu_memprops;
     vkGetPhysicalDeviceMemoryProperties(vk.gpu, &gpu_memprops);
     
-    VkBuffer xs_buffer = CreateBuffer(sizeof(float) * compute_bufsize,
-                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+    
+    
+    //VkDeviceMemory staging_memory;
+    vk.staging_buffer = CreateBuffer(sizeof(float) * worksize * 2,
+                                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                     vk.device, gpu_memprops,
+                                     &vk.staging_memory);
+    void *staging_mapptr;
+    vkMapMemory(vk.device, vk.staging_memory, 0, VK_WHOLE_SIZE, 0, &vk.staging_mapptr);
+    
+    
+    
+    VkDeviceMemory xs_memory;
+    VkBuffer xs_buffer = CreateBuffer(sizeof(float) * worksize,
+                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                       vk.device, gpu_memprops,
                                       &xs_memory);
-    VkBuffer ys_buffer = CreateBuffer(sizeof(float) * compute_bufsize,
-                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+    VkDeviceMemory ys_memory;
+    VkBuffer ys_buffer = CreateBuffer(sizeof(float) * worksize,
+                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                       vk.device, gpu_memprops,
                                       &ys_memory);
-    VkBuffer zs_buffer = CreateBuffer(sizeof(float) * compute_bufsize,
-                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+    VkDeviceMemory zs_memory;
+    VkBuffer zs_buffer = CreateBuffer(sizeof(float) * worksize,
+                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                       vk.device, gpu_memprops,
                                       &zs_memory);
-    
     void *xs_mapptr;
-    vkMapMemory(vk.device, xs_memory, 0, VK_WHOLE_SIZE, 0, &xs_mapptr);
-    memcpy(xs_mapptr, xs, sizeof(float) * compute_bufsize);
-    //vkUnmapMemory(vk.device, xs_memory);
-    
     void *ys_mapptr;
-    vkMapMemory(vk.device, ys_memory, 0, VK_WHOLE_SIZE, 0, &ys_mapptr);
-    memcpy(ys_mapptr, ys, sizeof(float) * compute_bufsize);
-    //vkUnmapMemory(vk.device, ys_memory);
-    
     void *zs_mapptr;
-    vkMapMemory(vk.device, zs_memory, 0, VK_WHOLE_SIZE, 0, &zs_mapptr);
-    memcpy(zs_mapptr, zs, sizeof(float) * compute_bufsize);
-    //vkUnmapMemory(vk.device, zs_memory);
     
     
+    
+    //StageBuffer();
+    
+    // this could be global, and you change parameters before calling the function.
+    //VkBufferCopy region = {};
+    vk.staging_region.srcOffset = 0;
+    vk.staging_region.dstOffset = 0;
+    vk.staging_region.size      = sizeof(float) * worksize;
+    StageBuffer(xs_buffer, xs, vk.staging_region.size);
+    StageBuffer(ys_buffer, ys, vk.staging_region.size);
+    StageBuffer(zs_buffer, zs, vk.staging_region.size);
+    
+    
+    
+    
+    
+    // I wonder if it wouldn't've been quicker to pick at the arrays on the GPU.
     free(xs);
     free(ys);
     free(zs);
@@ -2002,40 +2066,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
-    // Compute
-    // - prepare a render target
-    //VkImage computed_image;
-    //VkImageView computed_imageview;
-    VkDeviceMemory computed_imagememory;
     
-    CreateImage(&vk.computed_image, &computed_imagememory, app.window_width, app.window_height,
-                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_SAMPLED_BIT,
-                VK_IMAGE_LAYOUT_UNDEFINED, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    CreateImageView(&vk.computed_image, &vk.computed_imageview);
-    
-    VkImageMemoryBarrier barrier = {};
-    barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.pNext               = NULL;
-    barrier.srcAccessMask       = VK_ACCESS_HOST_READ_BIT;
-    barrier.dstAccessMask       = VK_ACCESS_HOST_WRITE_BIT;
-    barrier.oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
-    barrier.newLayout           = VK_IMAGE_LAYOUT_GENERAL;
-    barrier.image               = vk.computed_image;
-    barrier.subresourceRange    = vk.color_sr;
-    
-    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
-    vkCmdPipelineBarrier(vk.commandbuffer,
-                         VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_HOST_BIT,
-                         0,
-                         0, NULL,
-                         0, NULL,
-                         1, &barrier);
-    vkEndCommandBuffer(vk.commandbuffer);
-    vkQueueSubmit(vk.queue, 1, &transit_si, vk.fence);
-    
-    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
-    vkResetFences(vk.device, 1, &vk.fence);
-    // ---
     
     
     
@@ -2145,23 +2176,18 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
+    u64 gpu_minmax_time = TimerElapsedFrom(GPU_calc_start, MICROSECONDS);
+    string *gpu_minmax_str = TimerString(gpu_minmax_time);
+    ODS("Minmax on GPU done in: %.*s \n", gpu_minmax_str->length, gpu_minmax_str->ptr);
+    FreeString(gpu_minmax_str);
     
-    
-    
-#if 0    
-    r64 GPU_time_elapsed_s  = TimerElapsedFrom(GPU_calc_start, SECONDS);
-    r64 GPU_time_elapsed_ms = TimerElapsedFrom(GPU_calc_start, MILLISECONDS);
-    r64 GPU_time_elapsed_us = TimerElapsedFrom(GPU_calc_start, MICROSECONDS);
-    r64 GPU_time_elapsed_ns = TimerElapsedFrom(GPU_calc_start, NANOSECONDS);
-    
-    ODS("s:  %f\nms: %f\nus: %f\nns: %f\n", GPU_time_elapsed_s, GPU_time_elapsed_ms, GPU_time_elapsed_us, GPU_time_elapsed_ns);
-#endif
+    exit(0);
     
     // ===
     
     
     // read results
-    //u32 answer_size = compute_bufsize/32;
+    //u32 answer_size = worksize/32;
     
     u32 answer_range = controls.write_offset + 1;
     
@@ -2716,7 +2742,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     // --- SPLIT KERNEL MORTON SORT ---
     // --- variables
     const u32 blocksize = 32;
-    u32 worksize = model_tricount;
+    
     //u32 worksize = 64;
     u32 blockcount = (u32)ceil((r32)worksize / (r32)blocksize);  // I see some padding in the future
     
@@ -3685,27 +3711,14 @@ int CALLBACK WinMain(HINSTANCE instance,
         tree_check[left_index].parent  = i;
         tree_check[right_index].parent = i;
 #endif
-#if 0
-        if()
-            ODS("%d %d \n", i, tree_check[i].left);
-        ODS("%d %d \n", i, tree_check[i].right);
-        tree_check[tree_check[i].left].parent  = i;
-        tree_check[tree_check[i].right].parent = i;
-#endif
     }
     
     correct = true;
     for(u32 i = 0; i < (2*worksize-1); i++)
     {
-        if(
-            /*
-            (tree_data[i].d          != tree_check[i].d)          ||
-            (tree_data[i].delta_min  != tree_check[i].delta_min)  ||
-            (tree_data[i].delta_node != tree_check[i].delta_node) ||
-            */
-            (tree_data[i].parent     != tree_check[i].parent)     ||
-            (tree_data[i].left       != tree_check[i].left)       ||
-            (tree_data[i].right      != tree_check[i].right))
+        if((tree_data[i].parent     != tree_check[i].parent)     ||
+           (tree_data[i].left       != tree_check[i].left)       ||
+           (tree_data[i].right      != tree_check[i].right))
         {
             ODS("- Divergence at %s %d \n", (i < worksize) ? "node" : "leaf", i);
             correct = false;
@@ -3717,32 +3730,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // check to see if there's a lost leaf or if index assignment is incorrect
-#if 0    
-    
-    u32 node_count = worksize-1;
-    u32 last_node_index = node_count-1;
-    u32 *leaf_counters = (u32 *)calloc(worksize, sizeof(u32));
-    for(u32 i = 0; i < node_count; i++)
-    {
-        u32 left  = tree_data[i].left;
-        u32 right = tree_data[i].right;
-        
-        if(left > last_node_index)
-            leaf_counters[left-node_count]++;
-        if(right > last_node_index)
-            leaf_counters[right-node_count]++;
-    }
-    
-    for(u32 i = 0; i < worksize; i++)
-    {
-        if(leaf_counters[i] != 1)
-        {
-            ODS("Leaf %d is suspicious \n", i);
-        }
-    }
-    exit(0);
-#endif
-    
     // TO DO: there is no provision on some of the compute steps for thread counts not cleanly divisible by 32. DANGER!
     // I would expect the rabbit and the dragon to have some hiccups due to that.
     
@@ -4150,6 +4137,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
+#if 0    
     // What's left to do now...
     // - launch rays. From every pixel, or rather, from a camera a ray is shot at every pixel.
     //    It hits boxes, checks for collision and then looks at the children of the box.
@@ -4196,8 +4184,50 @@ int CALLBACK WinMain(HINSTANCE instance,
     {
         ODS("No intersection with the global aabb \n");
     }
+#endif
     
     
+    
+    
+    
+    
+    
+    
+    
+    
+    // - prepare a render target
+    //VkImage computed_image;
+    //VkImageView computed_imageview;
+    VkDeviceMemory computed_imagememory;
+    
+    CreateImage(&vk.computed_image, &computed_imagememory, app.window_width, app.window_height,
+                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_SAMPLED_BIT,
+                VK_IMAGE_LAYOUT_UNDEFINED, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    CreateImageView(&vk.computed_image, &vk.computed_imageview);
+    
+    VkImageMemoryBarrier barrier = {};
+    barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.pNext               = NULL;
+    barrier.srcAccessMask       = VK_ACCESS_HOST_READ_BIT;
+    barrier.dstAccessMask       = VK_ACCESS_HOST_WRITE_BIT;
+    barrier.oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout           = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.image               = vk.computed_image;
+    barrier.subresourceRange    = vk.color_sr;
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdPipelineBarrier(vk.commandbuffer,
+                         VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+                         0,
+                         0, NULL,
+                         0, NULL,
+                         1, &barrier);
+    vkEndCommandBuffer(vk.commandbuffer);
+    vkQueueSubmit(vk.queue, 1, &transit_si, vk.fence);
+    
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+    // ---
     
     
     

@@ -79,4 +79,5 @@ X(vkFreeDescriptorSets) \
 X(vkDestroyDescriptorPool) \
 X(vkDestroyDescriptorSetLayout) \
 X(vkDestroyPipelineLayout) \
-X(vkDestroyPipeline)
+X(vkDestroyPipeline) \
+X(vkCmdCopyBuffer)

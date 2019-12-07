@@ -172,6 +172,12 @@ struct
     VkCommandBuffer cbuffer;
     VkCommandBuffer commandbuffer;
     VkCommandBufferBeginInfo commandbuffer_bi;
+    
+    
+    VkBuffer staging_buffer;
+    VkDeviceMemory staging_memory;
+    void *staging_mapptr;
+    VkBufferCopy staging_region = {};
 } vk;
 
 struct
