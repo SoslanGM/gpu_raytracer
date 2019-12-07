@@ -1719,14 +1719,39 @@ void StageBuffer(VkBuffer buffer, float *data, u64 size)
     stage_si.pSignalSemaphores    = NULL;
     
     vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
-    vkCmdCopyBuffer(vk.commandbuffer, buffer, vk.staging_buffer, 1, &vk.staging_region);
+    vkCmdCopyBuffer(vk.commandbuffer, vk.staging_buffer, buffer, 1, &vk.staging_region);
     vkEndCommandBuffer(vk.commandbuffer);
     
     vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
     vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
     vkResetFences(vk.device, 1, &vk.fence);
 }
-
+// following conventions of memcpy
+void ReadBuffer(float *data, VkBuffer buffer, u64 size)
+{
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, buffer, vk.staging_buffer, 1, &vk.staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+    
+    memcpy(data, vk.staging_mapptr, size);
+}
 
 
 
@@ -2008,7 +2033,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     //VkDeviceMemory staging_memory;
-    vk.staging_buffer = CreateBuffer(sizeof(float) * worksize * 2,
+    vk.staging_buffer = CreateBuffer(sizeof(r32) * worksize * 2,
                                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                      vk.device, gpu_memprops,
@@ -2019,19 +2044,19 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     VkDeviceMemory xs_memory;
-    VkBuffer xs_buffer = CreateBuffer(sizeof(float) * worksize,
+    VkBuffer xs_buffer = CreateBuffer(sizeof(r32) * worksize,
                                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                       vk.device, gpu_memprops,
                                       &xs_memory);
     VkDeviceMemory ys_memory;
-    VkBuffer ys_buffer = CreateBuffer(sizeof(float) * worksize,
+    VkBuffer ys_buffer = CreateBuffer(sizeof(r32) * worksize,
                                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                       vk.device, gpu_memprops,
                                       &ys_memory);
     VkDeviceMemory zs_memory;
-    VkBuffer zs_buffer = CreateBuffer(sizeof(float) * worksize,
+    VkBuffer zs_buffer = CreateBuffer(sizeof(r32) * worksize,
                                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                       vk.device, gpu_memprops,
@@ -2048,7 +2073,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     //VkBufferCopy region = {};
     vk.staging_region.srcOffset = 0;
     vk.staging_region.dstOffset = 0;
-    vk.staging_region.size      = sizeof(float) * worksize;
+    vk.staging_region.size      = sizeof(r32) * worksize;
     StageBuffer(xs_buffer, xs, vk.staging_region.size);
     StageBuffer(ys_buffer, ys, vk.staging_region.size);
     StageBuffer(zs_buffer, zs, vk.staging_region.size);
@@ -2181,44 +2206,57 @@ int CALLBACK WinMain(HINSTANCE instance,
     ODS("Minmax on GPU done in: %.*s \n", gpu_minmax_str->length, gpu_minmax_str->ptr);
     FreeString(gpu_minmax_str);
     
-    exit(0);
     
     // ===
     
     
     // read results
-    //u32 answer_size = worksize/32;
-    
-    u32 answer_range = controls.write_offset + 1;
+    u32 answer_range = controls.write_offset + 1;  // because we're only interested in two elements; [0] and [write_offset]
     
     r32 *x_res = (r32 *)malloc(answer_range * sizeof(r32));       // FREE after... soon after.
-    memcpy(x_res, (r32 *)xs_mapptr, answer_range * sizeof(r32));
-    
     r32 *y_res = (r32 *)malloc(answer_range * sizeof(r32));
-    memcpy(y_res, (r32 *)ys_mapptr, answer_range * sizeof(r32));
-    
     r32 *z_res = (r32 *)malloc(answer_range * sizeof(r32));
-    memcpy(z_res, (r32 *)zs_mapptr, answer_range * sizeof(r32));
+    
+    vk.staging_region.size = answer_range * sizeof(r32);
+    ReadBuffer(x_res, xs_buffer, answer_range * sizeof(r32));
+    ReadBuffer(y_res, ys_buffer, answer_range * sizeof(r32));
+    ReadBuffer(z_res, zs_buffer, answer_range * sizeof(r32));
     
     ODS("Trumpets: compute result\n");
     
-    x_max = x_res[0]; x_min = x_res[controls.write_offset];
-    y_max = y_res[0]; y_min = y_res[controls.write_offset];
-    z_max = z_res[0]; z_min = z_res[controls.write_offset];
+    r32 x_max_gpu = x_res[0]; r32 x_min_gpu = x_res[controls.write_offset];
+    r32 y_max_gpu = y_res[0]; r32 y_min_gpu = y_res[controls.write_offset];
+    r32 z_max_gpu = z_res[0]; r32 z_min_gpu = z_res[controls.write_offset];
     
     r32 x_range = abs(x_min) + abs(x_max);
     r32 y_range = abs(y_min) + abs(y_max);
     r32 z_range = abs(z_min) + abs(z_max);
     
-    ODS("X: [ %+-7.3f | %+-7.3f ]\n", x_min, x_max);
-    ODS("Y: [ %+-7.3f | %+-7.3f ]\n", y_min, y_max);
-    ODS("Z: [ %+-7.3f | %+-7.3f ]\n", z_min, z_max);
+    ODS("X: [ %+-7.3f | %+-7.3f ]\n", x_min_gpu, x_max_gpu);
+    ODS("Y: [ %+-7.3f | %+-7.3f ]\n", y_min_gpu, y_max_gpu);
+    ODS("Z: [ %+-7.3f | %+-7.3f ]\n", z_min_gpu, z_max_gpu);
     
-    
+    bool correct = true;
+    if((x_min_gpu != x_min) ||
+       (y_min_gpu != y_min) ||
+       (z_min_gpu != z_min) ||
+       (x_max_gpu != x_max) ||
+       (y_max_gpu != y_max) ||
+       (z_max_gpu != z_max))
+    {
+        correct = false;
+    }
+    ODS("Minmax verification: %s \n", (correct) ? "PASSED" : "FAILED");
+    if(!correct)
+        exit(0);
     
     free(x_res);
     free(y_res);
     free(z_res);
+    
+    
+    exit(0);
+    
     
     
     // === Step 2: Go through all the triangles, calculate centroids, assign Morton codes.
@@ -2309,7 +2347,7 @@ int CALLBACK WinMain(HINSTANCE instance,
                                                vk.device, gpu_memprops,
                                                &model_index_memory);
     
-    vertex_datasize = sizeof(float) * model.floats_per_vertex * model.vertex_count;
+    vertex_datasize = sizeof(r32) * model.floats_per_vertex * model.vertex_count;
     VkDeviceMemory model_vertex_memory;
     VkBuffer model_vertex_buffer = CreateBuffer(vertex_datasize,
                                                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -3516,7 +3554,7 @@ int CALLBACK WinMain(HINSTANCE instance,
 #endif
     
     
-    bool correct = true;
+    correct = true;
     for(u32 i = 0; i < worksize-1; i++)
     {
         if(sorted_mortons[i].code > sorted_mortons[i+1].code)
@@ -4365,7 +4403,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     VkVertexInputBindingDescription vertex_binding = {};
     vertex_binding.binding   = 0;
-    vertex_binding.stride    = 5 * sizeof(float);
+    vertex_binding.stride    = 5 * sizeof(r32);
     vertex_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
     
     VkVertexInputAttributeDescription vert_description = {};
@@ -4378,7 +4416,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     uv_description.location = 1;
     uv_description.binding  = vertex_binding.binding;
     uv_description.format   = VK_FORMAT_R32G32_SFLOAT;
-    uv_description.offset   = 3 * sizeof(float);
+    uv_description.offset   = 3 * sizeof(r32);
     
     VkVertexInputAttributeDescription vertex_attributes[] = { vert_description, uv_description };
     
@@ -4610,7 +4648,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     VkDeviceMemory vertex_memory;
     //VkBuffer 
-    rendering.vertex_buffer = CreateBuffer(4 * 5 * sizeof(float),  // 4 * 5 *
+    rendering.vertex_buffer = CreateBuffer(4 * 5 * sizeof(r32),  // 4 * 5 *
                                            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                            vk.device,
@@ -4619,7 +4657,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     void *vertex_mapptr;
     vkMapMemory(vk.device, vertex_memory, 0, VK_WHOLE_SIZE, 0, &vertex_mapptr);
-    memcpy(vertex_mapptr, quad, 5 * 4 * sizeof(float));  // * 5 * 4
+    memcpy(vertex_mapptr, quad, 5 * 4 * sizeof(r32));  // * 5 * 4
     vkUnmapMemory(vk.device, vertex_memory);
     
     
