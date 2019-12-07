@@ -2002,8 +2002,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
-    
-    
     // Compute
     // - prepare a render target
     //VkImage computed_image;
@@ -2040,203 +2038,9 @@ int CALLBACK WinMain(HINSTANCE instance,
     // ---
     
     
-    // - pipeline and resources
-    //u32 block_size = 32;
     
-    //char *shader = "../code/shader_comp.spv";
-    char *shader = "../code/minmax_comp.spv";
+    // --- first step beginning
     
-    VkPipelineShaderStageCreateInfo stage_ci = {};
-    stage_ci.sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    stage_ci.pNext               = NULL;
-    stage_ci.flags               = 0;
-    stage_ci.stage               = VK_SHADER_STAGE_COMPUTE_BIT;
-    stage_ci.module              = GetShaderModule(shader);
-    stage_ci.pName               = "main";
-    stage_ci.pSpecializationInfo = NULL;
-    
-    VkDescriptorSetLayoutBinding binding_x = {};
-    binding_x.binding            = 0;
-    binding_x.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    binding_x.descriptorCount    = 1;
-    binding_x.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    binding_x.pImmutableSamplers = NULL;
-    
-    VkDescriptorSetLayoutBinding binding_y = {};
-    binding_y.binding            = 1;
-    binding_y.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    binding_y.descriptorCount    = 1;
-    binding_y.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    binding_y.pImmutableSamplers = NULL;
-    
-    VkDescriptorSetLayoutBinding binding_z = {};
-    binding_z.binding            = 2;
-    binding_z.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    binding_z.descriptorCount    = 1;
-    binding_z.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    binding_z.pImmutableSamplers = NULL;
-    
-    VkDescriptorSetLayoutBinding bindings[] = { binding_x, binding_y, binding_z };
-    
-    
-    VkDescriptorSetLayoutCreateInfo dsl_ci = {};
-    dsl_ci.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    dsl_ci.pNext        = NULL;
-    dsl_ci.flags        = 0;
-    dsl_ci.bindingCount = 3;
-    dsl_ci.pBindings    = bindings;
-    VkDescriptorSetLayout dslayout;
-    vkCreateDescriptorSetLayout(vk.device, &dsl_ci, NULL, &dslayout);
-    
-    VkDescriptorPoolSize dspool_size = {};
-    dspool_size.type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    dspool_size.descriptorCount = 3;
-    
-    VkDescriptorPoolCreateInfo dspool_ci = {};
-    dspool_ci.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    dspool_ci.pNext         = NULL;
-    dspool_ci.flags         = 0;
-    dspool_ci.maxSets       = 3;
-    dspool_ci.poolSizeCount = 1;
-    dspool_ci.pPoolSizes    = &dspool_size;
-    VkDescriptorPool dspool;
-    vkCreateDescriptorPool(vk.device, &dspool_ci, NULL, &dspool);
-    
-    VkDescriptorSetAllocateInfo dsl_ai = {};
-    dsl_ai.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    dsl_ai.pNext              = NULL;
-    dsl_ai.descriptorPool     = dspool;
-    dsl_ai.descriptorSetCount = 1;
-    dsl_ai.pSetLayouts        = &dslayout;
-    vkAllocateDescriptorSets(vk.device, &dsl_ai, &vk.dsl);
-    
-    VkPushConstantRange pcr = {};
-    pcr.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    pcr.offset     = 0;
-    pcr.size       = 3 * sizeof(u32);
-    
-    VkPipelineLayoutCreateInfo layout_ci = {};
-    layout_ci.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layout_ci.pNext                  = NULL;
-    layout_ci.flags                  = 0;
-    layout_ci.setLayoutCount         = 1;
-    layout_ci.pSetLayouts            = &dslayout;
-    layout_ci.pushConstantRangeCount = 1;
-    layout_ci.pPushConstantRanges    = &pcr;
-    vkCreatePipelineLayout(vk.device, &layout_ci, NULL, &vk.pipelayout);
-    
-    
-    VkComputePipelineCreateInfo compipe_ci = {};
-    compipe_ci.sType              = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    compipe_ci.pNext              = NULL;
-    compipe_ci.flags              = 0;
-    compipe_ci.stage              = stage_ci;
-    compipe_ci.layout             = vk.pipelayout;
-    compipe_ci.basePipelineHandle = NULL;
-    compipe_ci.basePipelineIndex  = 0;
-    
-    vkCreateComputePipelines(vk.device, NULL, 1, &compipe_ci, NULL, &vk.compipe);
-    
-    
-#if 0
-    VkDescriptorImageInfo computetexture_info = {};
-    computetexture_info.sampler     = NULL;
-    computetexture_info.imageView   = computed_imageview;
-    computetexture_info.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-    
-    VkWriteDescriptorSet compute_write = {};
-    compute_write.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    compute_write.pNext            = NULL;
-    compute_write.dstSet           = vk.dsl;
-    compute_write.dstBinding       = 0;
-    compute_write.dstArrayElement  = 0;
-    compute_write.descriptorCount  = 1;
-    compute_write.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    compute_write.pImageInfo       = &computetexture_info;
-    compute_write.pBufferInfo      = NULL;
-    compute_write.pTexelBufferView = NULL;
-#endif
-    
-    VkDescriptorBufferInfo x_buffer_info = {};
-    x_buffer_info.buffer = xs_buffer;
-    x_buffer_info.offset = 0;
-    x_buffer_info.range  = VK_WHOLE_SIZE;
-    
-    VkWriteDescriptorSet write_x = {};
-    write_x.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write_x.pNext            = NULL;
-    write_x.dstSet           = vk.dsl;
-    write_x.dstBinding       = 0;
-    write_x.dstArrayElement  = 0;
-    write_x.descriptorCount  = 1;
-    write_x.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    write_x.pImageInfo       = NULL;
-    write_x.pBufferInfo      = &x_buffer_info;
-    write_x.pTexelBufferView = NULL;
-    
-    
-    VkDescriptorBufferInfo y_buffer_info = {};
-    y_buffer_info.buffer = ys_buffer;
-    y_buffer_info.offset = 0;
-    y_buffer_info.range  = VK_WHOLE_SIZE;
-    
-    VkWriteDescriptorSet write_y = {};
-    write_y.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write_y.pNext            = NULL;
-    write_y.dstSet           = vk.dsl;
-    write_y.dstBinding       = 1;
-    write_y.dstArrayElement  = 0;
-    write_y.descriptorCount  = 1;
-    write_y.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    write_y.pImageInfo       = NULL;
-    write_y.pBufferInfo      = &y_buffer_info;
-    write_y.pTexelBufferView = NULL;
-    
-    
-    VkDescriptorBufferInfo z_buffer_info = {};
-    z_buffer_info.buffer = zs_buffer;
-    z_buffer_info.offset = 0;
-    z_buffer_info.range  = VK_WHOLE_SIZE;
-    
-    VkWriteDescriptorSet write_z = {};
-    write_z.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write_z.pNext            = NULL;
-    write_z.dstSet           = vk.dsl;
-    write_z.dstBinding       = 2;
-    write_z.dstArrayElement  = 0;
-    write_z.descriptorCount  = 1;
-    write_z.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    write_z.pImageInfo       = NULL;
-    write_z.pBufferInfo      = &z_buffer_info;
-    write_z.pTexelBufferView = NULL;
-    
-    
-    VkWriteDescriptorSet compute_writes[] = { write_x, write_y, write_z };
-    
-    vkUpdateDescriptorSets(vk.device, 3, compute_writes, 0, NULL);
-    
-#if 0
-    u32 xdim = ceil(r32(app.window_width) / 32.0f);
-    u32 ydim = ceil(r32(app.window_height) / 32.0f);
-#endif
-    
-    VkMemoryBarrier dispatch_barrier = {};
-    dispatch_barrier.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    dispatch_barrier.pNext         = NULL;
-    dispatch_barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
-    dispatch_barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-    
-    
-    
-    
-    // Compute stuff
-    
-    // === Step 1: Take a look at the model vertexes, find min/max of xyz, get the AABB of the model.
-    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
-    vkCmdBindDescriptorSets(vk.commandbuffer, vk.bindpoint_compute, vk.pipelayout, 0, 1, &vk.dsl, 0, NULL);
-    vkCmdBindPipeline(vk.commandbuffer, vk.bindpoint_compute, vk.compipe);
-    
-    // --- This entire block is riddled with dangerous floaty maths.
     u32 thread_count = model_tricount;
     u32 block_count = (u32)ceil((r32)thread_count / (r32)block_size);
     
@@ -2251,12 +2055,52 @@ int CALLBACK WinMain(HINSTANCE instance,
     controls.write_offset = (u32)ceil((r32)block_count / (r32)block_size) * block_size;
     
     
+    in_struct *minmax_in = (in_struct *)calloc(1, sizeof(in_struct));
+    minmax_in->shader_file = String("../code/minmax_comp.spv");
     
+    minmax_in->resource_count = 3;
+    minmax_in->resources = (resource_record *)calloc(minmax_in->resource_count, sizeof(resource_record));
+    minmax_in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    minmax_in->resources[0].buffer = xs_buffer;
+    minmax_in->resources[0].memory = xs_memory;
+    minmax_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    minmax_in->resources[1].buffer = ys_buffer;
+    minmax_in->resources[1].memory = ys_memory;
+    minmax_in->resources[2].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    minmax_in->resources[2].buffer = zs_buffer;
+    minmax_in->resources[2].memory = zs_memory;
+    
+    minmax_in->pcr_size = 3;
+    minmax_in->pcr_data = (u32 *)calloc(minmax_in->pcr_size, sizeof(u32));
+    // note: I'm not supplying any push constant information into the _in struct.
+    // For this one, since these change every execution, I'll do regular constant pushing.
+    
+    out_struct *minmax_out = CreateComputePipeline(minmax_in);
+    
+    
+    
+    vkUpdateDescriptorSets(vk.device, minmax_out->descwrite_count, minmax_out->descwrites, 0, NULL);
+    
+    
+    VkMemoryBarrier dispatch_barrier = {};
+    dispatch_barrier.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    dispatch_barrier.pNext         = NULL;
+    dispatch_barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+    dispatch_barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    
+    
+    // Compute stuff
     u64 GPU_calc_start = TimerRead();
+    
+    // === Step 1: Take a look at the model vertexes, find min/max of xyz, get the AABB of the model.
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdBindDescriptorSets(vk.commandbuffer, vk.bindpoint_compute, minmax_out->pipe_layout, 0, 1, &minmax_out->pipe_dset, 0, NULL);
+    vkCmdBindPipeline(vk.commandbuffer, vk.bindpoint_compute, minmax_out->pipe);
+    
     
     // - min/max
     ODS("Dispatch: %5d threads, %4d blocks; [offsets r:%4d | w:%4d]\n", thread_count, block_count, controls.read_offset, controls.write_offset);
-    vkCmdPushConstants(vk.commandbuffer, vk.pipelayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(controls), &controls);  // is sizeof(controls) 12?
+    vkCmdPushConstants(vk.commandbuffer, minmax_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(controls), &controls);  // is sizeof(controls) 12?
     vkCmdDispatch(vk.commandbuffer, block_count, 1, 1);
     for(; block_count > 1; )
     {
@@ -2275,10 +2119,11 @@ int CALLBACK WinMain(HINSTANCE instance,
         controls.write_offset = ceil((r32)block_count / 32.0f) * 32;
         ODS("Dispatch: %5d threads, %4d blocks; [offsets r:%4d | w:%4d]\n", thread_count, block_count, controls.read_offset, controls.write_offset);
         
-        vkCmdPushConstants(vk.commandbuffer, vk.pipelayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(controls), &controls);
+        vkCmdPushConstants(vk.commandbuffer, minmax_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(controls), &controls);
         vkCmdDispatch(vk.commandbuffer, block_count, 1, 1);
     }
     vkEndCommandBuffer(vk.commandbuffer);
+    
     // ---
     
     
@@ -2293,12 +2138,25 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkResetFences(vk.device, 1, &vk.fence);
     
     
+    
+    // --- first step over
+    
+    
+    
+    
+    
+    
+    
+    
+#if 0    
     r64 GPU_time_elapsed_s  = TimerElapsedFrom(GPU_calc_start, SECONDS);
     r64 GPU_time_elapsed_ms = TimerElapsedFrom(GPU_calc_start, MILLISECONDS);
     r64 GPU_time_elapsed_us = TimerElapsedFrom(GPU_calc_start, MICROSECONDS);
     r64 GPU_time_elapsed_ns = TimerElapsedFrom(GPU_calc_start, NANOSECONDS);
     
     ODS("s:  %f\nms: %f\nus: %f\nns: %f\n", GPU_time_elapsed_s, GPU_time_elapsed_ms, GPU_time_elapsed_us, GPU_time_elapsed_ns);
+#endif
+    
     // ===
     
     
@@ -3620,7 +3478,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     primitive_entry *sorted_mortons = (primitive_entry *)calloc(worksize, sizeof(primitive_entry));
     memcpy(sorted_mortons, mortondata_mapptr, worksize * sizeof(primitive_entry));
     
-#if 1
+#if 0
     ODS("Sorted mortons: \n");
     for(u32 i = 0; i < worksize; i++)
     {
@@ -3966,12 +3824,17 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkUnmapMemory(vk.device, tree_depth_memory);
     
     u32 depth_levels[32] = {};
+    for(u32 i = 0; i < worksize; i++)
+    {
+        depth_levels[tree_depth_array[i]]++;
+    }
+#if 0    
     ODS("Depth values of nodes: \n");
     for(u32 i = 0; i < worksize; i++)
     {
         ODS("%5d %5d \n", i, tree_depth_array[i]);
-        depth_levels[tree_depth_array[i]]++;
     }
+#endif
     
     ODS("Depth distribution: \n");
     for(u32 i = 0; i < 32; i++)
