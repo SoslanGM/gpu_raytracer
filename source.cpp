@@ -2017,9 +2017,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     u64 cpu_minmax_time = TimerElapsedFrom(CPU_calc_start, MICROSECONDS);
-    string *cpu_minmax_str = TimerString(cpu_minmax_time);
-    ODS("Minmax on CPU done in: %.*s \n", cpu_minmax_str->length, cpu_minmax_str->ptr);
-    FreeString(cpu_minmax_str);
+    
     
     
     
@@ -2198,13 +2196,15 @@ int CALLBACK WinMain(HINSTANCE instance,
     // --- first step over
     
     
-    
-    
+    string *cpu_minmax_str = TimerString(cpu_minmax_time);
+    ODS("Minmax on CPU done in: %.*s \n", cpu_minmax_str->length, cpu_minmax_str->ptr);
+    FreeString(cpu_minmax_str);
     
     u64 gpu_minmax_time = TimerElapsedFrom(GPU_calc_start, MICROSECONDS);
     string *gpu_minmax_str = TimerString(gpu_minmax_time);
     ODS("Minmax on GPU done in: %.*s \n", gpu_minmax_str->length, gpu_minmax_str->ptr);
     FreeString(gpu_minmax_str);
+    
     
     
     // ===
@@ -2255,7 +2255,18 @@ int CALLBACK WinMain(HINSTANCE instance,
     free(z_res);
     
     
-    exit(0);
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     
     
@@ -2336,6 +2347,11 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
+    
+    
+    
+    
+    
     // resources
     // TO DO: rename bvhdata into leafdata
     
@@ -2370,13 +2386,33 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkMapMemory(vk.device, model_vertex_memory, 0, VK_WHOLE_SIZE, 0, &model_vertex_mapptr);
     memcpy(model_vertex_mapptr, model.vertices, vertex_datasize);
     
-    //FreeParsedOBJ(&model_obj);
     
     
     
     
+    in_struct *mortoncodes_in = (in_struct *)calloc(1, sizeof(in_struct));
+    mortoncodes_in->shader_file = String("../code/centroidmorton.spv");
+    
+    mortoncodes_in->resource_count = 3;
+    mortoncodes_in->resources = (resource_record *)calloc(mortoncodes_in->resource_count, sizeof(resource_record));
+    mortoncodes_in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    mortoncodes_in->resources[0].buffer = model_index_buffer;
+    mortoncodes_in->resources[0].memory = model_index_memory;
+    mortoncodes_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    mortoncodes_in->resources[1].buffer = model_vertex_buffer;
+    mortoncodes_in->resources[1].memory = model_vertex_memory;
+    mortoncodes_in->resources[2].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    mortoncodes_in->resources[2].buffer = model_bvhdata_buffer;
+    mortoncodes_in->resources[2].memory = model_bvhdata_memory;
+    
+    mortoncodes_in->pcr_size = 7;
+    mortoncodes_in->pcr_data = (u32 *)calloc(mortoncodes_in->pcr_size, sizeof(u32));
+    
+    out_struct *mortoncodes_out = CreateComputePipeline(mortoncodes_in);
     
     
+    
+#if 0    
     // Pipeline with 6 push constants, 3 bound buffers: 2 in + 1 out
     char *shader2 = "../code/centroidmorton.spv";
     
@@ -2534,7 +2570,15 @@ int CALLBACK WinMain(HINSTANCE instance,
     compipe2_bvhdatawrite.pTexelBufferView = NULL;
     
     VkWriteDescriptorSet compipe2_descwrites[] = { compipe2_indexwrite, compipe2_vertexwrite, compipe2_bvhdatawrite };
-    vkUpdateDescriptorSets(vk.device, 3, compipe2_descwrites, 0, NULL);
+#endif
+    
+    
+    
+    
+    //vkUpdateDescriptorSets(vk.device, 3, compipe2_descwrites, 0, NULL);
+    vkUpdateDescriptorSets(vk.device, mortoncodes_out->descwrite_count, mortoncodes_out->descwrites, 0, NULL);
+    
+    
     
     struct
     {
@@ -2567,12 +2611,22 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     // --- generate mortons
     // command buffer
+#if 0
     vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
     vkCmdBindDescriptorSets(vk.commandbuffer, vk.bindpoint_compute, compipe2_layout, 0, 1, &compipe2_ds, 0, NULL);
     vkCmdBindPipeline(vk.commandbuffer, vk.bindpoint_compute, compipe2);
     vkCmdPushConstants(vk.commandbuffer, compipe2_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(r32) * 6 + sizeof(u32), &step2_controls);
     vkCmdDispatch(vk.commandbuffer, block_count, 1, 1);
     vkEndCommandBuffer(vk.commandbuffer);
+#endif
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdBindDescriptorSets(vk.commandbuffer, vk.bindpoint_compute, mortoncodes_out->pipe_layout, 0, 1, &mortoncodes_out->pipe_dset, 0, NULL);
+    vkCmdBindPipeline(vk.commandbuffer, vk.bindpoint_compute, mortoncodes_out->pipe);
+    vkCmdPushConstants(vk.commandbuffer, mortoncodes_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(r32) * 6 + sizeof(u32), &step2_controls);
+    vkCmdDispatch(vk.commandbuffer, block_count, 1, 1);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    
     
     // execution
     vkQueueSubmit(vk.queue, 1, &vk.compute_si, vk.fence);
@@ -2580,14 +2634,32 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkResetFences(vk.device, 1, &vk.fence);
     
     
+    exit(0);
+    
+    
+    
+    
+    
+    
     bvhdata *step2_data = (bvhdata *)malloc(sizeof(bvhdata) * model_tricount);
-    //u32 *step2_data = (u32 *)malloc(sizeof(u32) * model_tricount);
     
     void *bvhdata_mapptr;
     vkMapMemory(vk.device, model_bvhdata_memory, 0, VK_WHOLE_SIZE, 0, &bvhdata_mapptr);
     memcpy(step2_data, bvhdata_mapptr, sizeof(bvhdata) * model_tricount);
-    //memcpy(step2_data, bvhdata_mapptr, sizeof(u32) * model_tricount);
     vkUnmapMemory(vk.device, model_bvhdata_memory);
+    
+    
+    
+    
+    
+    
+    // - profile
+    
+    
+    
+    
+    
+    
     
     
     
@@ -2623,94 +2695,6 @@ int CALLBACK WinMain(HINSTANCE instance,
             ODS("> set %5d \n", i);
         }
     }
-#endif
-    
-    
-    
-    // Morton sort
-    
-#if 0
-    u32 worksize = 32;//model_tricount;
-    u32 groupcount = worksize / block_size;
-    
-    
-    u32 morton_datasize = worksize * sizeof(u32);
-    
-    for(u32 i = 0; i < worksize; i++)
-    {
-        ODS("%3d : %s\n", i, DecToBin(morton_data[i], 32));
-    }
-    ODS("\n");
-    
-    
-    u32 *opspace = (u32 *)calloc(worksize, sizeof(u32));
-    u32 *bitsums = (u32 *)calloc(worksize, sizeof(u32));
-    
-    u32 number_width = 32;
-    u32 radix = 2;
-    u32 counters[2] = {};
-    
-    // we go through every number, THEN go to the next bit.
-    // Just a single group first.
-    for(u32 bit_index = 0; bit_index < number_width; bit_index++)
-    {
-        u32 *digits  = (u32 *)calloc(2 * worksize, sizeof(u32));
-        u32 *scan    = (u32 *)calloc(2 * worksize, sizeof(u32));
-        u32 *shuffle = (u32 *)calloc(2 * worksize, sizeof(u32));
-        
-        ODS("start \n");
-        for(u32 i = 0; i < worksize; i++)
-        {
-            u32 bit_value = (morton_data[i] & (1 << bit_index)) >> bit_index;
-            counters[bit_value]++;
-            // this is only working because I had a single group;
-            //  but the pattern remains: write all 0s, then all 1s.
-            digits[bit_value*number_width+i] = 1;
-        }
-        
-        // scan the digits
-        u32 scanner = 0;
-        for(u32 j = 0; j < 63; j++)
-        {
-            scanner += digits[j];
-            scan[j+1] = scanner;
-        }
-        
-        u32 counter = 0;
-        for(u32 j = 0; j < 64; j++)
-        {
-            if(digits[j] == 1)
-            {
-                u32 index = j % 32;
-                shuffle[counter] = index;
-                counter++;
-            }
-        }
-        
-        for(u32 j = 0; j < worksize; j++)
-        {
-            u32 index = shuffle[j];
-            u32 value = morton_data[index];
-            opspace[j] = value;
-            // opspace[j] = morton_data[shuffle[j]];
-        }
-        
-        for(u32 j = 0; j < worksize; j++)
-        {
-            morton_data[j] = opspace[j];
-        }
-        ODS("end \n");
-    }
-    
-    
-    
-    ODS("Sorted: \n");
-    for(u32 i = 0; i < worksize; i++)
-    {
-        ODS("%s \n", DecToBin(morton_data[i], number_width));
-    }
-    
-    CheckMortonSorting(morton_data, worksize);
 #endif
     
     
