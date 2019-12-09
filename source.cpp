@@ -1858,6 +1858,41 @@ void StageBuffer_primentry(VkBuffer buffer, primitive_entry *data, u64 size)
 {
     StageBuffer_primentry(buffer, data, 0, 0, size);
 }
+void StageBuffer_treeentry(VkBuffer buffer, tree_entry *data, u64 srcOffset, u64 dstOffset, u64 size)
+{
+    memcpy(vk.staging_mapptr, data, size);
+    
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    
+    VkBufferCopy staging_region = {};
+    staging_region.srcOffset = srcOffset;
+    staging_region.dstOffset = dstOffset;
+    staging_region.size      = size;
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, vk.staging_buffer, buffer, 1, &staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+}
+void StageBuffer_treeentry(VkBuffer buffer, tree_entry *data, u64 size)
+{
+    StageBuffer_treeentry(buffer, data, 0, 0, size);
+}
 
 
 
@@ -2006,6 +2041,42 @@ void ReadBuffer_primentry(primitive_entry *data, VkBuffer buffer, u64 srcOffset,
 void ReadBuffer_primentry(primitive_entry *data, VkBuffer buffer, u64 size)
 {
     ReadBuffer_primentry(data, buffer, 0, 0, size);
+}
+
+void ReadBuffer_treeentry(tree_entry *data, VkBuffer buffer, u64 srcOffset, u64 dstOffset, u64 size)
+{
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    
+    VkBufferCopy staging_region = {};
+    staging_region.srcOffset = srcOffset;
+    staging_region.dstOffset = dstOffset;
+    staging_region.size      = size;
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, buffer, vk.staging_buffer, 1, &staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+    
+    memcpy(data, vk.staging_mapptr, size);
+}
+void ReadBuffer_treeentry(tree_entry *data, VkBuffer buffer, u64 size)
+{
+    ReadBuffer_treeentry(data, buffer, 0, 0, size);
 }
 
 
@@ -3598,8 +3669,9 @@ int CALLBACK WinMain(HINSTANCE instance,
     u32 tree_datasize = (2 * worksize - 1) * sizeof(tree_entry);
     
     VkDeviceMemory tree_memory;
-    VkBuffer tree_buffer = CreateBuffer(tree_datasize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+    VkBuffer tree_buffer = CreateBuffer(tree_datasize, 
+                                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                         vk.device, gpu_memprops,
                                         &tree_memory);
     
@@ -3615,9 +3687,8 @@ int CALLBACK WinMain(HINSTANCE instance,
         tree_data[i].right = -1;
     }
     
-    void *tree_mapptr;
-    vkMapMemory(vk.device, tree_memory, 0, VK_WHOLE_SIZE, 0, &tree_mapptr);
-    memcpy(tree_mapptr, tree_data, tree_datasize);
+    StageBuffer_treeentry(tree_buffer, tree_data, tree_datasize);
+    
     
     
     // you realize how easy it is to META this? :)
@@ -3661,8 +3732,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     result = vkResetFences(vk.device, 1, &vk.fence);
     ODS_RES("Suspicious fence reset: %s \n");
     
-    memcpy(tree_data, tree_mapptr, tree_datasize);
-    vkUnmapMemory(vk.device, tree_memory);
+    ReadBuffer_treeentry(tree_data, tree_buffer, tree_datasize);
+    
     
     
     u32 *sorted_values = (u32 *)calloc(worksize, sizeof(u32));
@@ -3779,13 +3850,11 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     //ODS("Look at the tree here \n");
     
-    
     // check to see if there's a lost leaf or if index assignment is incorrect
     // TO DO: there is no provision on some of the compute steps for thread counts not cleanly divisible by 32. DANGER!
     // I would expect the rabbit and the dragon to have some hiccups due to that.
     
     
-    //exit(0);
     
     
     
@@ -3799,6 +3868,25 @@ int CALLBACK WinMain(HINSTANCE instance,
     CleanPipeline(step6_out);
     CleanPipeline(step7_out);
     CleanPipeline(tree_out);
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     
     
