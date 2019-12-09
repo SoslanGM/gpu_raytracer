@@ -1708,7 +1708,7 @@ typedef struct
 
 
 
-void StageBuffer(VkBuffer buffer, r32 *data, u64 size)
+void StageBuffer(VkBuffer buffer, r32 *data, u64 srcOffset, u64 dstOffset, u64 size)
 {
     memcpy(vk.staging_mapptr, data, size);
     
@@ -1725,9 +1725,50 @@ void StageBuffer(VkBuffer buffer, r32 *data, u64 size)
     stage_si.signalSemaphoreCount = 0;
     stage_si.pSignalSemaphores    = NULL;
     
-    vk.staging_region.size = size;
+    
+    VkBufferCopy staging_region = {};
+    staging_region.srcOffset = srcOffset;
+    staging_region.dstOffset = dstOffset;
+    staging_region.size      = size;
+    
     vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
-    vkCmdCopyBuffer(vk.commandbuffer, vk.staging_buffer, buffer, 1, &vk.staging_region);
+    vkCmdCopyBuffer(vk.commandbuffer, vk.staging_buffer, buffer, 1, &staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+}
+void StageBuffer(VkBuffer buffer, r32 *data, u64 size)
+{
+    StageBuffer(buffer, data, 0, 0, size);
+}
+
+void StageBuffer_u32(VkBuffer buffer, u32 *data, u64 srcOffset, u64 dstOffset, u64 size)
+{
+    memcpy(vk.staging_mapptr, data, size);
+    
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    
+    VkBufferCopy staging_region = {};
+    staging_region.srcOffset = srcOffset;
+    staging_region.dstOffset = dstOffset;
+    staging_region.size      = size;
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, vk.staging_buffer, buffer, 1, &staging_region);
     vkEndCommandBuffer(vk.commandbuffer);
     
     vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
@@ -1736,6 +1777,12 @@ void StageBuffer(VkBuffer buffer, r32 *data, u64 size)
 }
 void StageBuffer_u32(VkBuffer buffer, u32 *data, u64 size)
 {
+    StageBuffer_u32(buffer, data, 0, 0, size);
+}
+
+
+void StageBuffer_s32(VkBuffer buffer, s32 *data, u64 srcOffset, u64 dstOffset, u64 size)
+{
     memcpy(vk.staging_mapptr, data, size);
     
     VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
@@ -1751,9 +1798,14 @@ void StageBuffer_u32(VkBuffer buffer, u32 *data, u64 size)
     stage_si.signalSemaphoreCount = 0;
     stage_si.pSignalSemaphores    = NULL;
     
-    vk.staging_region.size = size;
+    
+    VkBufferCopy staging_region = {};
+    staging_region.srcOffset = srcOffset;
+    staging_region.dstOffset = dstOffset;
+    staging_region.size      = size;
+    
     vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
-    vkCmdCopyBuffer(vk.commandbuffer, vk.staging_buffer, buffer, 1, &vk.staging_region);
+    vkCmdCopyBuffer(vk.commandbuffer, vk.staging_buffer, buffer, 1, &staging_region);
     vkEndCommandBuffer(vk.commandbuffer);
     
     vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
@@ -1762,33 +1814,11 @@ void StageBuffer_u32(VkBuffer buffer, u32 *data, u64 size)
 }
 void StageBuffer_s32(VkBuffer buffer, s32 *data, u64 size)
 {
-    memcpy(vk.staging_mapptr, data, size);
-    
-    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    
-    VkSubmitInfo stage_si = {};
-    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    stage_si.pNext                = NULL;
-    stage_si.waitSemaphoreCount   = 0;
-    stage_si.pWaitSemaphores      = NULL;
-    stage_si.pWaitDstStageMask    = &staging_mask;
-    stage_si.commandBufferCount   = 1;
-    stage_si.pCommandBuffers      = &vk.commandbuffer;
-    stage_si.signalSemaphoreCount = 0;
-    stage_si.pSignalSemaphores    = NULL;
-    
-    vk.staging_region.size = size;
-    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
-    vkCmdCopyBuffer(vk.commandbuffer, vk.staging_buffer, buffer, 1, &vk.staging_region);
-    vkEndCommandBuffer(vk.commandbuffer);
-    
-    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
-    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
-    vkResetFences(vk.device, 1, &vk.fence);
+    StageBuffer_s32(buffer, data, 0, 0, size);
 }
-// following conventions of memcpy
-// HMMM. Need a way to pass the type.
-void ReadBuffer(r32 *data, VkBuffer buffer, u64 size)
+
+// is it ok to hold r32 as default?
+void ReadBuffer(r32 *data, VkBuffer buffer, u64 srcOffset, u64 dstOffset, u64 size)
 {
     VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
     
@@ -1803,9 +1833,51 @@ void ReadBuffer(r32 *data, VkBuffer buffer, u64 size)
     stage_si.signalSemaphoreCount = 0;
     stage_si.pSignalSemaphores    = NULL;
     
-    vk.staging_region.size = size;
+    
+    VkBufferCopy staging_region = {};
+    staging_region.srcOffset = srcOffset;
+    staging_region.dstOffset = dstOffset;
+    staging_region.size      = size;
+    
     vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
-    vkCmdCopyBuffer(vk.commandbuffer, buffer, vk.staging_buffer, 1, &vk.staging_region);
+    vkCmdCopyBuffer(vk.commandbuffer, buffer, vk.staging_buffer, 1, &staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+    
+    memcpy(data, vk.staging_mapptr, size);
+}
+void ReadBuffer(r32 *data, VkBuffer buffer, u64 size)
+{
+    ReadBuffer(data, buffer, 0, 0, size);
+}
+
+
+void ReadBuffer_u32(u32 *data, VkBuffer buffer, u64 srcOffset, u64 dstOffset, u64 size)
+{
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    
+    VkBufferCopy staging_region = {};
+    staging_region.srcOffset = srcOffset;
+    staging_region.dstOffset = dstOffset;
+    staging_region.size      = size;
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, buffer, vk.staging_buffer, 1, &staging_region);
     vkEndCommandBuffer(vk.commandbuffer);
     
     vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
@@ -1816,32 +1888,11 @@ void ReadBuffer(r32 *data, VkBuffer buffer, u64 size)
 }
 void ReadBuffer_u32(u32 *data, VkBuffer buffer, u64 size)
 {
-    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    
-    VkSubmitInfo stage_si = {};
-    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    stage_si.pNext                = NULL;
-    stage_si.waitSemaphoreCount   = 0;
-    stage_si.pWaitSemaphores      = NULL;
-    stage_si.pWaitDstStageMask    = &staging_mask;
-    stage_si.commandBufferCount   = 1;
-    stage_si.pCommandBuffers      = &vk.commandbuffer;
-    stage_si.signalSemaphoreCount = 0;
-    stage_si.pSignalSemaphores    = NULL;
-    
-    vk.staging_region.size = size;
-    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
-    vkCmdCopyBuffer(vk.commandbuffer, buffer, vk.staging_buffer, 1, &vk.staging_region);
-    vkEndCommandBuffer(vk.commandbuffer);
-    
-    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
-    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
-    vkResetFences(vk.device, 1, &vk.fence);
-    
-    memcpy(data, vk.staging_mapptr, size);
+    ReadBuffer_u32(data, buffer, 0, 0, size);
 }
+
 // This is the solution. I don't care :D Just have an overload for everything.
-void ReadBuffer_bvhdata(bvhdata *data, VkBuffer buffer, u64 size)
+void ReadBuffer_bvhdata(bvhdata *data, VkBuffer buffer, u64 srcOffset, u64 dstOffset, u64 size)
 {
     VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
     
@@ -1856,9 +1907,14 @@ void ReadBuffer_bvhdata(bvhdata *data, VkBuffer buffer, u64 size)
     stage_si.signalSemaphoreCount = 0;
     stage_si.pSignalSemaphores    = NULL;
     
-    vk.staging_region.size = size;
+    
+    VkBufferCopy staging_region = {};
+    staging_region.srcOffset = srcOffset;
+    staging_region.dstOffset = dstOffset;
+    staging_region.size      = size;
+    
     vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
-    vkCmdCopyBuffer(vk.commandbuffer, buffer, vk.staging_buffer, 1, &vk.staging_region);
+    vkCmdCopyBuffer(vk.commandbuffer, buffer, vk.staging_buffer, 1, &staging_region);
     vkEndCommandBuffer(vk.commandbuffer);
     
     vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
@@ -1867,7 +1923,10 @@ void ReadBuffer_bvhdata(bvhdata *data, VkBuffer buffer, u64 size)
     
     memcpy(data, vk.staging_mapptr, size);
 }
-
+void ReadBuffer_bvhdata(bvhdata *data, VkBuffer buffer, u64 size)
+{
+    ReadBuffer_bvhdata(data, buffer, 0, 0, size);
+}
 
 
 
@@ -2186,8 +2245,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     // this could be global, and you change parameters before calling the function.
     //VkBufferCopy region = {};
-    vk.staging_region.srcOffset = 0;
-    vk.staging_region.dstOffset = 0;
     StageBuffer(xs_buffer, xs, sizeof(r32) * worksize);
     StageBuffer(ys_buffer, ys, sizeof(r32) * worksize);
     StageBuffer(zs_buffer, zs, sizeof(r32) * worksize);
@@ -4061,12 +4118,14 @@ int CALLBACK WinMain(HINSTANCE instance,
            (bvh_cpu[i].upper.x != bvh_gpu[i].upper.x) ||
            (bvh_cpu[i].upper.y != bvh_gpu[i].upper.y) ||
            (bvh_cpu[i].upper.z != bvh_gpu[i].upper.z))
+        {
+            ODS("Discrepancy at node %d \n", i);
             correct = false;
+        }
     }
     vkUnmapMemory(vk.device, bvh_memory);
     
     ODS("BVH verification: %s \n", correct ? "PASSED" : "FAILED");
-    
     
     
     // fool with compaction later? I wonder though if it's not compact already.
