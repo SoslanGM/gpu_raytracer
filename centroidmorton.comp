@@ -84,10 +84,10 @@ void main()
     float z_max = max(max(v0_z, v1_z), v2_z);
     
     // calculate morton code
-    float morton_range = 1023.0;
-    uint morton_x = uint(floor( (cen_x+abs(x_start)) * (morton_range/x_range) ));
-    uint morton_y = uint(floor( (cen_y+abs(y_start)) * (morton_range/y_range) ));
-    uint morton_z = uint(floor( (cen_z+abs(z_start)) * (morton_range/z_range) ));
+    float morton_range = 1024.0;
+    uint morton_x = uint(floor( (cen_x-x_start) * (morton_range/x_range) ));
+    uint morton_y = uint(floor( (cen_y-y_start) * (morton_range/y_range) ));
+    uint morton_z = uint(floor( (cen_z-z_start) * (morton_range/z_range) ));
     uint mcode = EncodeMorton3(morton_x, morton_y, morton_z);
     
     // write all that stuff.

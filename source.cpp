@@ -1699,9 +1699,16 @@ bool RayBox(ray r, AABB_padded b, r32 *t_result)
 
 
 
+typedef struct
+{
+    vertex3 cen;
+    u32 morton_code;
+    AABB_padded bounding_box;
+} bvhdata;
 
 
-void StageBuffer(VkBuffer buffer, float *data, u64 size)
+
+void StageBuffer(VkBuffer buffer, r32 *data, u64 size)
 {
     memcpy(vk.staging_mapptr, data, size);
     
@@ -1718,6 +1725,59 @@ void StageBuffer(VkBuffer buffer, float *data, u64 size)
     stage_si.signalSemaphoreCount = 0;
     stage_si.pSignalSemaphores    = NULL;
     
+    vk.staging_region.size = size;
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, vk.staging_buffer, buffer, 1, &vk.staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+}
+void StageBuffer_u32(VkBuffer buffer, u32 *data, u64 size)
+{
+    memcpy(vk.staging_mapptr, data, size);
+    
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    vk.staging_region.size = size;
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, vk.staging_buffer, buffer, 1, &vk.staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+}
+void StageBuffer_s32(VkBuffer buffer, s32 *data, u64 size)
+{
+    memcpy(vk.staging_mapptr, data, size);
+    
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    vk.staging_region.size = size;
     vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
     vkCmdCopyBuffer(vk.commandbuffer, vk.staging_buffer, buffer, 1, &vk.staging_region);
     vkEndCommandBuffer(vk.commandbuffer);
@@ -1727,7 +1787,8 @@ void StageBuffer(VkBuffer buffer, float *data, u64 size)
     vkResetFences(vk.device, 1, &vk.fence);
 }
 // following conventions of memcpy
-void ReadBuffer(float *data, VkBuffer buffer, u64 size)
+// HMMM. Need a way to pass the type.
+void ReadBuffer(r32 *data, VkBuffer buffer, u64 size)
 {
     VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
     
@@ -1742,6 +1803,60 @@ void ReadBuffer(float *data, VkBuffer buffer, u64 size)
     stage_si.signalSemaphoreCount = 0;
     stage_si.pSignalSemaphores    = NULL;
     
+    vk.staging_region.size = size;
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, buffer, vk.staging_buffer, 1, &vk.staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+    
+    memcpy(data, vk.staging_mapptr, size);
+}
+void ReadBuffer_u32(u32 *data, VkBuffer buffer, u64 size)
+{
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    vk.staging_region.size = size;
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, buffer, vk.staging_buffer, 1, &vk.staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+    
+    memcpy(data, vk.staging_mapptr, size);
+}
+// This is the solution. I don't care :D Just have an overload for everything.
+void ReadBuffer_bvhdata(bvhdata *data, VkBuffer buffer, u64 size)
+{
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    vk.staging_region.size = size;
     vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
     vkCmdCopyBuffer(vk.commandbuffer, buffer, vk.staging_buffer, 1, &vk.staging_region);
     vkEndCommandBuffer(vk.commandbuffer);
@@ -1771,6 +1886,8 @@ u32 frame_counter = 0;
 
 #define RD 0 
 
+#define KILOBYTE 1024
+#define MEGABYTE 1024 * 1024
 int CALLBACK WinMain(HINSTANCE instance,
                      HINSTANCE prevInstance,
                      LPSTR commandLine,
@@ -2031,7 +2148,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     //VkDeviceMemory staging_memory;
-    vk.staging_buffer = CreateBuffer(sizeof(r32) * worksize * 2,
+    vk.staging_buffer = CreateBuffer(MEGABYTE,
                                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                      vk.device, gpu_memprops,
@@ -2071,10 +2188,9 @@ int CALLBACK WinMain(HINSTANCE instance,
     //VkBufferCopy region = {};
     vk.staging_region.srcOffset = 0;
     vk.staging_region.dstOffset = 0;
-    vk.staging_region.size      = sizeof(r32) * worksize;
-    StageBuffer(xs_buffer, xs, vk.staging_region.size);
-    StageBuffer(ys_buffer, ys, vk.staging_region.size);
-    StageBuffer(zs_buffer, zs, vk.staging_region.size);
+    StageBuffer(xs_buffer, xs, sizeof(r32) * worksize);
+    StageBuffer(ys_buffer, ys, sizeof(r32) * worksize);
+    StageBuffer(zs_buffer, zs, sizeof(r32) * worksize);
     
     
     
@@ -2191,7 +2307,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
     vkResetFences(vk.device, 1, &vk.fence);
     
-    
+    u64 gpu_minmax_time = TimerElapsedFrom(GPU_calc_start, MICROSECONDS);
     
     // --- first step over
     
@@ -2200,7 +2316,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     ODS("Minmax on CPU done in: %.*s \n", cpu_minmax_str->length, cpu_minmax_str->ptr);
     FreeString(cpu_minmax_str);
     
-    u64 gpu_minmax_time = TimerElapsedFrom(GPU_calc_start, MICROSECONDS);
     string *gpu_minmax_str = TimerString(gpu_minmax_time);
     ODS("Minmax on GPU done in: %.*s \n", gpu_minmax_str->length, gpu_minmax_str->ptr);
     FreeString(gpu_minmax_str);
@@ -2217,7 +2332,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     r32 *y_res = (r32 *)malloc(answer_range * sizeof(r32));
     r32 *z_res = (r32 *)malloc(answer_range * sizeof(r32));
     
-    vk.staging_region.size = answer_range * sizeof(r32);
     ReadBuffer(x_res, xs_buffer, answer_range * sizeof(r32));
     ReadBuffer(y_res, ys_buffer, answer_range * sizeof(r32));
     ReadBuffer(z_res, zs_buffer, answer_range * sizeof(r32));
@@ -2272,17 +2386,11 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     // === Step 2: Go through all the triangles, calculate centroids, assign Morton codes.
     
-    typedef struct
-    {
-        vertex3 cen;
-        u32 morton_code;
-        AABB_padded bounding_box;
-    } bvhdata;
-    
     
     // CPU impl
     bvhdata *step2_cpu = (bvhdata *)malloc(sizeof(bvhdata) * model_tricount);  // FREE after the loop
     
+    u64 cpu_centroidmortonbox_start = TimerRead();
     for(u32 i = 0; i < model_tricount; i++)
     {
         // indexes
@@ -2312,11 +2420,11 @@ int CALLBACK WinMain(HINSTANCE instance,
         step2_cpu[i].cen.y = cen_y;
         step2_cpu[i].cen.z = cen_z;
         
-        // map to [0;1023], calculate the Morton code
-        r32 new_range = 1024.0f;  // DANGER: if coord components are 1, we're fucked 
-        u32 morton_x = (u32)floor((cen_x+abs(x_min))*(new_range/x_range));
-        u32 morton_y = (u32)floor((cen_y+abs(y_min))*(new_range/y_range));
-        u32 morton_z = (u32)floor((cen_z+abs(z_min))*(new_range/z_range));
+        r32 new_range = 1024.0f;
+        u32 morton_x = (u32)floor((cen_x-x_min)*(new_range/x_range));
+        u32 morton_y = (u32)floor((cen_y-y_min)*(new_range/y_range));
+        u32 morton_z = (u32)floor((cen_z-z_min)*(new_range/z_range));
+        
         u32 morton = EncodeMorton3(morton_x, morton_y, morton_z);
         step2_cpu[i].morton_code = morton;
         
@@ -2340,11 +2448,9 @@ int CALLBACK WinMain(HINSTANCE instance,
         step2_cpu[i].bounding_box.upper.z   = upper_z;
         step2_cpu[i].bounding_box.upper.pad = 0;
     }
+    u64 cpu_centroidmortonbox_time = TimerElapsedFrom(cpu_centroidmortonbox_start, MICROSECONDS);
     
-    // FREE step2_cpu here
-    free(step2_cpu);
     //exit(0);
-    
     
     
     
@@ -2358,35 +2464,30 @@ int CALLBACK WinMain(HINSTANCE instance,
     u32 index_datasize = sizeof(u32) * model.index_count;
     VkDeviceMemory model_index_memory;
     VkBuffer model_index_buffer = CreateBuffer(index_datasize,
-                                               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                vk.device, gpu_memprops,
                                                &model_index_memory);
     
     vertex_datasize = sizeof(r32) * model.floats_per_vertex * model.vertex_count;
     VkDeviceMemory model_vertex_memory;
     VkBuffer model_vertex_buffer = CreateBuffer(vertex_datasize,
-                                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                 vk.device, gpu_memprops,
                                                 &model_vertex_memory);
     
     VkDeviceMemory model_bvhdata_memory;
-    VkBuffer model_bvhdata_buffer = CreateBuffer(sizeof(bvhdata) * model_tricount,
-                                                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+    u32 bvhdata_datasize = sizeof(bvhdata) * model_tricount;
+    VkBuffer model_bvhdata_buffer = CreateBuffer(bvhdata_datasize,
+                                                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                  vk.device, gpu_memprops,
                                                  &model_bvhdata_memory);
-    
-    void *model_index_mapptr;
-    vkMapMemory(vk.device, model_index_memory, 0, VK_WHOLE_SIZE, 0, &model_index_mapptr);
-    memcpy(model_index_mapptr, model.indices, index_datasize);
-    
-    void *model_vertex_mapptr;
-    vkMapMemory(vk.device, model_vertex_memory, 0, VK_WHOLE_SIZE, 0, &model_vertex_mapptr);
-    memcpy(model_vertex_mapptr, model.vertices, vertex_datasize);
-    
-    
+    ODS("Staging model indexes to GPU \n");
+    StageBuffer_s32(model_index_buffer, model.indices, index_datasize);
+    ODS("Staging model vertexes to GPU \n");
+    StageBuffer(model_vertex_buffer, model.vertices, vertex_datasize);
     
     
     
@@ -2411,173 +2512,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     out_struct *mortoncodes_out = CreateComputePipeline(mortoncodes_in);
     
     
-    
-#if 0    
-    // Pipeline with 6 push constants, 3 bound buffers: 2 in + 1 out
-    char *shader2 = "../code/centroidmorton.spv";
-    
-    VkPipelineShaderStageCreateInfo compipe2_stageci = {};
-    compipe2_stageci.sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    compipe2_stageci.pNext               = NULL;
-    compipe2_stageci.flags               = 0;
-    compipe2_stageci.stage               = VK_SHADER_STAGE_COMPUTE_BIT;
-    compipe2_stageci.module              = GetShaderModule(shader2);
-    compipe2_stageci.pName               = "main";
-    compipe2_stageci.pSpecializationInfo = NULL;
-    
-    
-    // index
-    VkDescriptorSetLayoutBinding compipe2_bindindex = {};
-    compipe2_bindindex.binding            = 0;
-    compipe2_bindindex.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe2_bindindex.descriptorCount    = 1;
-    compipe2_bindindex.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    compipe2_bindindex.pImmutableSamplers = NULL;
-    
-    // vertex
-    VkDescriptorSetLayoutBinding compipe2_bindvertex = {};
-    compipe2_bindvertex.binding            = 1;
-    compipe2_bindvertex.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe2_bindvertex.descriptorCount    = 1;
-    compipe2_bindvertex.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    compipe2_bindvertex.pImmutableSamplers = NULL;
-    
-    // bvhdata
-    VkDescriptorSetLayoutBinding compipe2_bindbvhdata = {};
-    compipe2_bindbvhdata.binding            = 2;
-    compipe2_bindbvhdata.descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe2_bindbvhdata.descriptorCount    = 1;
-    compipe2_bindbvhdata.stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
-    compipe2_bindbvhdata.pImmutableSamplers = NULL;
-    
-    VkDescriptorSetLayoutBinding compipe2_bindings[] = { compipe2_bindindex, compipe2_bindvertex, compipe2_bindbvhdata };
-    
-    
-    VkDescriptorSetLayoutCreateInfo compipe2_dslci = {};
-    compipe2_dslci.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    compipe2_dslci.pNext        = NULL;
-    compipe2_dslci.flags        = 0;
-    compipe2_dslci.bindingCount = 3;
-    compipe2_dslci.pBindings    = compipe2_bindings;
-    
-    
-    VkDescriptorSetLayout compipe2_dsl;
-    vkCreateDescriptorSetLayout(vk.device, &compipe2_dslci, NULL, &compipe2_dsl);
-    
-    VkDescriptorPoolSize compipe2_dspoolsize = {};
-    compipe2_dspoolsize.type            = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe2_dspoolsize.descriptorCount = 3;
-    
-    VkDescriptorPoolCreateInfo compipe2_dspci = {};
-    compipe2_dspci.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    compipe2_dspci.pNext         = NULL;
-    compipe2_dspci.flags         = 0;
-    compipe2_dspci.maxSets       = 3;
-    compipe2_dspci.poolSizeCount = 1;
-    compipe2_dspci.pPoolSizes    = &compipe2_dspoolsize;
-    VkDescriptorPool compipe2_dspool;
-    vkCreateDescriptorPool(vk.device, &compipe2_dspci, NULL, &compipe2_dspool);
-    
-    VkDescriptorSetAllocateInfo compipe2_dsai = {};
-    compipe2_dsai.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    compipe2_dsai.pNext              = NULL;
-    compipe2_dsai.descriptorPool     = compipe2_dspool;
-    compipe2_dsai.descriptorSetCount = 1;
-    compipe2_dsai.pSetLayouts        = &compipe2_dsl;
-    VkDescriptorSet compipe2_ds;
-    vkAllocateDescriptorSets(vk.device, &compipe2_dsai, &compipe2_ds);
-    
-    
-    VkPushConstantRange pcr2 = {};
-    pcr2.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    pcr2.offset     = 0;
-    pcr2.size       = sizeof(r32) * 6 + sizeof(u32);
-    
-    VkPipelineLayoutCreateInfo compipe2_layoutci = {};
-    compipe2_layoutci.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    compipe2_layoutci.pNext                  = NULL;
-    compipe2_layoutci.flags                  = 0;
-    compipe2_layoutci.setLayoutCount         = 1;
-    compipe2_layoutci.pSetLayouts            = &compipe2_dsl;
-    compipe2_layoutci.pushConstantRangeCount = 1;
-    compipe2_layoutci.pPushConstantRanges    = &pcr2;
-    
-    VkPipelineLayout compipe2_layout;
-    vkCreatePipelineLayout(vk.device, &compipe2_layoutci, NULL, &compipe2_layout);
-    
-    VkComputePipelineCreateInfo compute2_ci = {};
-    compute2_ci.sType              = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    compute2_ci.pNext              = NULL;
-    compute2_ci.flags              = 0;
-    compute2_ci.stage              = compipe2_stageci;
-    compute2_ci.layout             = compipe2_layout;
-    compute2_ci.basePipelineHandle = NULL;
-    compute2_ci.basePipelineIndex  = 0;
-    
-    VkPipeline compipe2;
-    vkCreateComputePipelines(vk.device, NULL, 1, &compute2_ci, NULL, &compipe2);
-    
-    
-    VkDescriptorBufferInfo compipe2_indexwbi = {};
-    compipe2_indexwbi.buffer = model_index_buffer;
-    compipe2_indexwbi.offset = 0;
-    compipe2_indexwbi.range  = VK_WHOLE_SIZE;
-    
-    VkWriteDescriptorSet compipe2_indexwrite = {};
-    compipe2_indexwrite.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    compipe2_indexwrite.pNext            = NULL;
-    compipe2_indexwrite.dstSet           = compipe2_ds;
-    compipe2_indexwrite.dstBinding       = 0;
-    compipe2_indexwrite.dstArrayElement  = 0;
-    compipe2_indexwrite.descriptorCount  = 1;
-    compipe2_indexwrite.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe2_indexwrite.pImageInfo       = NULL;
-    compipe2_indexwrite.pBufferInfo      = &compipe2_indexwbi;
-    compipe2_indexwrite.pTexelBufferView = NULL;
-    
-    VkDescriptorBufferInfo compipe2_vertexwbi = {};
-    compipe2_vertexwbi.buffer = model_vertex_buffer;
-    compipe2_vertexwbi.offset = 0;
-    compipe2_vertexwbi.range  = VK_WHOLE_SIZE;
-    
-    VkWriteDescriptorSet compipe2_vertexwrite = {};
-    compipe2_vertexwrite.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    compipe2_vertexwrite.pNext            = NULL;
-    compipe2_vertexwrite.dstSet           = compipe2_ds;
-    compipe2_vertexwrite.dstBinding       = 1;
-    compipe2_vertexwrite.dstArrayElement  = 0;
-    compipe2_vertexwrite.descriptorCount  = 1;
-    compipe2_vertexwrite.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe2_vertexwrite.pImageInfo       = NULL;
-    compipe2_vertexwrite.pBufferInfo      = &compipe2_vertexwbi;
-    compipe2_vertexwrite.pTexelBufferView = NULL;
-    
-    VkDescriptorBufferInfo compipe2_bvhdatawbi = {};
-    compipe2_bvhdatawbi.buffer = model_bvhdata_buffer;
-    compipe2_bvhdatawbi.offset = 0;
-    compipe2_bvhdatawbi.range  = VK_WHOLE_SIZE;
-    
-    VkWriteDescriptorSet compipe2_bvhdatawrite = {};
-    compipe2_bvhdatawrite.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    compipe2_bvhdatawrite.pNext            = NULL;
-    compipe2_bvhdatawrite.dstSet           = compipe2_ds;
-    compipe2_bvhdatawrite.dstBinding       = 2;
-    compipe2_bvhdatawrite.dstArrayElement  = 0;
-    compipe2_bvhdatawrite.descriptorCount  = 1;
-    compipe2_bvhdatawrite.descriptorType   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    compipe2_bvhdatawrite.pImageInfo       = NULL;
-    compipe2_bvhdatawrite.pBufferInfo      = &compipe2_bvhdatawbi;
-    compipe2_bvhdatawrite.pTexelBufferView = NULL;
-    
-    VkWriteDescriptorSet compipe2_descwrites[] = { compipe2_indexwrite, compipe2_vertexwrite, compipe2_bvhdatawrite };
-#endif
-    
-    
-    
-    
-    //vkUpdateDescriptorSets(vk.device, 3, compipe2_descwrites, 0, NULL);
     vkUpdateDescriptorSets(vk.device, mortoncodes_out->descwrite_count, mortoncodes_out->descwrites, 0, NULL);
-    
     
     
     struct
@@ -2611,43 +2546,26 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     // --- generate mortons
     // command buffer
-#if 0
-    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
-    vkCmdBindDescriptorSets(vk.commandbuffer, vk.bindpoint_compute, compipe2_layout, 0, 1, &compipe2_ds, 0, NULL);
-    vkCmdBindPipeline(vk.commandbuffer, vk.bindpoint_compute, compipe2);
-    vkCmdPushConstants(vk.commandbuffer, compipe2_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(r32) * 6 + sizeof(u32), &step2_controls);
-    vkCmdDispatch(vk.commandbuffer, block_count, 1, 1);
-    vkEndCommandBuffer(vk.commandbuffer);
-#endif
+    u64 gpu_centroidmortonbox_start = TimerRead();
+    
     vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
     vkCmdBindDescriptorSets(vk.commandbuffer, vk.bindpoint_compute, mortoncodes_out->pipe_layout, 0, 1, &mortoncodes_out->pipe_dset, 0, NULL);
     vkCmdBindPipeline(vk.commandbuffer, vk.bindpoint_compute, mortoncodes_out->pipe);
-    vkCmdPushConstants(vk.commandbuffer, mortoncodes_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(r32) * 6 + sizeof(u32), &step2_controls);
+    vkCmdPushConstants(vk.commandbuffer, mortoncodes_out->pipe_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(u32) + 6 * sizeof(r32), &step2_controls);
     vkCmdDispatch(vk.commandbuffer, block_count, 1, 1);
     vkEndCommandBuffer(vk.commandbuffer);
-    
-    
     
     // execution
     vkQueueSubmit(vk.queue, 1, &vk.compute_si, vk.fence);
     vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
     vkResetFences(vk.device, 1, &vk.fence);
     
-    
-    exit(0);
-    
-    
-    
+    u64 gpu_centroidmortonbox_time = TimerElapsedFrom(gpu_centroidmortonbox_start, MICROSECONDS);
     
     
     
     bvhdata *step2_data = (bvhdata *)malloc(sizeof(bvhdata) * model_tricount);
-    
-    void *bvhdata_mapptr;
-    vkMapMemory(vk.device, model_bvhdata_memory, 0, VK_WHOLE_SIZE, 0, &bvhdata_mapptr);
-    memcpy(step2_data, bvhdata_mapptr, sizeof(bvhdata) * model_tricount);
-    vkUnmapMemory(vk.device, model_bvhdata_memory);
-    
+    ReadBuffer_bvhdata(step2_data, model_bvhdata_buffer, bvhdata_datasize);
     
     
     
@@ -2655,47 +2573,41 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     // - profile
     
+    ODS("Centroid verification: \n");
     
-    
-    
-    
-    
-    
-    
-    
-    // precision difference check
-#if 0
-    for(u32 i = 0; i < model_tricount; i++)
+    correct = true;
+    for(u32 i = 0; i < worksize; i++)
     {
-        r32 epsilon = 0.000001;
-        r32 epsilon_x = abs(step2_cpu[i].cen_x - step2_data[i].cen_x);
-        r32 epsilon_y = abs(step2_cpu[i].cen_y - step2_data[i].cen_y);
-        r32 epsilon_z = abs(step2_cpu[i].cen_z - step2_data[i].cen_z);
+        r32 eps   = 0.000001;
+        r32 eps_x = abs(step2_cpu[i].cen.x - step2_data[i].cen.x);
+        r32 eps_y = abs(step2_cpu[i].cen.y - step2_data[i].cen.y);
+        r32 eps_z = abs(step2_cpu[i].cen.z - step2_data[i].cen.z);
         
-        if ((epsilon_x > epsilon) ||
-            (epsilon_y > epsilon) ||
-            (epsilon_z > epsilon))
+        if((eps_x > eps) ||
+           (eps_y > eps) ||
+           (eps_z > eps))
         {
-            ODS("> set %5d \n", i);
+            ODS("> set %5d: CPU[%+-7.3f %+-7.3f %+-7.3f], GPU[%+-7.3f %+-7.3f %+-7.3f] \n", i,
+                step2_cpu[i].cen.x,  step2_cpu[i].cen.y,  step2_cpu[i].cen.z,
+                step2_data[i].cen.x, step2_data[i].cen.y, step2_data[i].cen.z);
+            correct = false;
         }
     }
-#endif
-#if 0
-    for(u32 i = 0; i < model_tricount; i++)
-    {
-        r32 epsilon = 0.000001;
-        r32 epsilon_x = abs(step2_cpu[i].cen.x - step2_data[i].cen.x);
-        r32 epsilon_y = abs(step2_cpu[i].cen.y - step2_data[i].cen.y);
-        r32 epsilon_z = abs(step2_cpu[i].cen.z - step2_data[i].cen.z);
-        
-        if ((epsilon_x > epsilon) ||
-            (epsilon_y > epsilon) ||
-            (epsilon_z > epsilon))
-        {
-            ODS("> set %5d \n", i);
-        }
-    }
-#endif
+    ODS("Centroid calculation: %s \n", correct ? "VERIFIED" : "FAILED");
+    
+    
+    free(step2_cpu);
+    
+    
+    
+    string *cpu_centroidmortonbox_str = TimerString(cpu_centroidmortonbox_time);
+    ODS("Morton calc on CPU done in: %.*s \n", cpu_centroidmortonbox_str->length, cpu_centroidmortonbox_str->ptr);
+    FreeString(cpu_centroidmortonbox_str);
+    
+    string *gpu_centroidmortonbox_str = TimerString(gpu_centroidmortonbox_time);
+    ODS("Morton calc on GPU done in: %.*s \n", gpu_centroidmortonbox_str->length, gpu_centroidmortonbox_str->ptr);
+    FreeString(gpu_centroidmortonbox_str);
+    
     
     
     
@@ -2820,7 +2732,6 @@ int CALLBACK WinMain(HINSTANCE instance,
         morton_data[i].code  = step2_data[i].morton_code;
     }
     
-    // FREE step2_data here
     free(step2_data);
     
 #if 0
@@ -3544,7 +3455,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         if(sorted_mortons[i].code > sorted_mortons[i+1].code)
             correct = false;
     }
-    ODS("FINAL VALIDATION: %s \n", (correct == true) ? "PASSED" : "FAILED");
+    ODS("MORTON SORT VALIDATION: %s \n", (correct == true) ? "PASSED" : "FAILED");
     
     
     vkUnmapMemory(vk.device, flag_vector_zero_memory);
@@ -3743,6 +3654,10 @@ int CALLBACK WinMain(HINSTANCE instance,
            (tree_data[i].right      != tree_check[i].right))
         {
             ODS("- Divergence at %s %d \n", (i < worksize) ? "node" : "leaf", i);
+            ODS("-- GPU: [%5d | %5d %5d], CPU: [%5d | %5d %5d] \n",
+                tree_data[i].parent,  tree_data[i].left,  tree_data[i].right,
+                tree_check[i].parent, tree_check[i].left, tree_check[i].right);
+            
             correct = false;
         }
     }

@@ -34,6 +34,7 @@ glslangValidator -V ..\code\shader.frag -o ..\code\shader_frag.spv
 set vulkanInclude=%vulkan_sdk%\Include
 
 set NAME=source
+::set NAME=source__19_11
 cl /I %vulkanInclude% -nologo -Zi "..\code\%NAME%.cpp" /link user32.lib gdi32.lib kernel32.lib shlwapi.lib winmm.lib
 
 popd
