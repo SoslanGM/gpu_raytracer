@@ -1706,6 +1706,12 @@ typedef struct
     AABB_padded bounding_box;
 } bvhdata;
 
+typedef struct 
+{
+    u32 index;
+    u32 code;
+} primitive_entry;
+
 
 
 void StageBuffer(VkBuffer buffer, r32 *data, u64 srcOffset, u64 dstOffset, u64 size)
@@ -1817,6 +1823,44 @@ void StageBuffer_s32(VkBuffer buffer, s32 *data, u64 size)
     StageBuffer_s32(buffer, data, 0, 0, size);
 }
 
+void StageBuffer_primentry(VkBuffer buffer, primitive_entry *data, u64 srcOffset, u64 dstOffset, u64 size)
+{
+    memcpy(vk.staging_mapptr, data, size);
+    
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    
+    VkBufferCopy staging_region = {};
+    staging_region.srcOffset = srcOffset;
+    staging_region.dstOffset = dstOffset;
+    staging_region.size      = size;
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, vk.staging_buffer, buffer, 1, &staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+}
+void StageBuffer_primentry(VkBuffer buffer, primitive_entry *data, u64 size)
+{
+    StageBuffer_primentry(buffer, data, 0, 0, size);
+}
+
+
+
 // is it ok to hold r32 as default?
 void ReadBuffer(r32 *data, VkBuffer buffer, u64 srcOffset, u64 dstOffset, u64 size)
 {
@@ -1926,6 +1970,42 @@ void ReadBuffer_bvhdata(bvhdata *data, VkBuffer buffer, u64 srcOffset, u64 dstOf
 void ReadBuffer_bvhdata(bvhdata *data, VkBuffer buffer, u64 size)
 {
     ReadBuffer_bvhdata(data, buffer, 0, 0, size);
+}
+
+void ReadBuffer_primentry(primitive_entry *data, VkBuffer buffer, u64 srcOffset, u64 dstOffset, u64 size)
+{
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    
+    VkBufferCopy staging_region = {};
+    staging_region.srcOffset = srcOffset;
+    staging_region.dstOffset = dstOffset;
+    staging_region.size      = size;
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, buffer, vk.staging_buffer, 1, &staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+    
+    memcpy(data, vk.staging_mapptr, size);
+}
+void ReadBuffer_primentry(primitive_entry *data, VkBuffer buffer, u64 size)
+{
+    ReadBuffer_primentry(data, buffer, 0, 0, size);
 }
 
 
@@ -2775,11 +2855,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // step 1
-    typedef struct 
-    {
-        u32 index;
-        u32 code;
-    } primitive_entry;
     
     //u32 *morton_data = (u32 *)malloc(worksize * sizeof(u32));
     primitive_entry *morton_data = (primitive_entry *)malloc(worksize * sizeof(primitive_entry));
@@ -2804,33 +2879,30 @@ int CALLBACK WinMain(HINSTANCE instance,
     // TO DO: replace CPU-side buffer with a staging buffer and a GPU-side buffer
     u32 workdata_size  = worksize * sizeof(u32);
     u32 entrydata_size = worksize * sizeof(primitive_entry); 
-    // I really dislike this ^ convention...
+    // I really dislike this ^ convention... it's probably better to have one per buffer...
+    
+    
     
     VkDeviceMemory mortondata_memory;
-    VkBuffer mortondata_buffer = CreateBuffer(entrydata_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+    VkBuffer mortondata_buffer = CreateBuffer(entrydata_size,
+                                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                               vk.device, gpu_memprops,
                                               &mortondata_memory);
     VkDeviceMemory flag_vector_zero_memory;
-    VkBuffer flag_vector_zero_buffer = CreateBuffer(workdata_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+    VkBuffer flag_vector_zero_buffer = CreateBuffer(workdata_size,
+                                                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                     vk.device, gpu_memprops,
                                                     &flag_vector_zero_memory);
     VkDeviceMemory flag_vector_one_memory;
-    VkBuffer flag_vector_one_buffer = CreateBuffer(workdata_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+    VkBuffer flag_vector_one_buffer = CreateBuffer(workdata_size,
+                                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                    vk.device, gpu_memprops,
                                                    &flag_vector_one_memory);
     
-    void *mortondata_mapptr;
-    vkMapMemory(vk.device, mortondata_memory, 0, VK_WHOLE_SIZE, 0, &mortondata_mapptr);
-    memcpy(mortondata_mapptr, morton_data, entrydata_size);
-    
-    void *flag_vector_zero_mapptr;
-    vkMapMemory(vk.device, flag_vector_zero_memory, 0, VK_WHOLE_SIZE, 0, &flag_vector_zero_mapptr);
-    
-    void *flag_vector_one_mapptr;
-    vkMapMemory(vk.device, flag_vector_one_memory, 0, VK_WHOLE_SIZE, 0, &flag_vector_one_mapptr);
+    StageBuffer_primentry(mortondata_buffer, morton_data, entrydata_size);
     
     
     
@@ -2859,21 +2931,17 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     // step 2
     VkDeviceMemory scan_vector_zero_memory;
-    VkBuffer scan_vector_zero_buffer = CreateBuffer(workdata_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+    VkBuffer scan_vector_zero_buffer = CreateBuffer(workdata_size,
+                                                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                     vk.device, gpu_memprops,
                                                     &scan_vector_zero_memory);
     VkDeviceMemory scan_vector_one_memory;
-    VkBuffer scan_vector_one_buffer = CreateBuffer(workdata_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+    VkBuffer scan_vector_one_buffer = CreateBuffer(workdata_size,
+                                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                    vk.device, gpu_memprops,
                                                    &scan_vector_one_memory);
-    
-    void *scan_vector_zero_mapptr;
-    vkMapMemory(vk.device, scan_vector_zero_memory, 0, VK_WHOLE_SIZE, 0, &scan_vector_zero_mapptr);
-    
-    void *scan_vector_one_mapptr;
-    vkMapMemory(vk.device, scan_vector_one_memory, 0, VK_WHOLE_SIZE, 0, &scan_vector_one_mapptr);
     
     
     
@@ -2907,21 +2975,17 @@ int CALLBACK WinMain(HINSTANCE instance,
     // in: 2 flag vectors, [datasize]
     // out: 2 sum vectors, [blockcount]
     VkDeviceMemory flag_sum_zero_memory;
-    VkBuffer flag_sum_zero_buffer = CreateBuffer(blockcount * sizeof(u32), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+    VkBuffer flag_sum_zero_buffer = CreateBuffer(blockcount * sizeof(u32),
+                                                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                  vk.device, gpu_memprops,
                                                  &flag_sum_zero_memory);
     VkDeviceMemory flag_sum_one_memory;
-    VkBuffer flag_sum_one_buffer = CreateBuffer(blockcount * sizeof(u32), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+    VkBuffer flag_sum_one_buffer = CreateBuffer(blockcount * sizeof(u32), 
+                                                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                 vk.device, gpu_memprops,
                                                 &flag_sum_one_memory);
-    
-    void *flag_sum_zero_mapptr;
-    vkMapMemory(vk.device, flag_sum_zero_memory, 0, VK_WHOLE_SIZE, 0, &flag_sum_zero_mapptr);
-    
-    void *flag_sum_one_mapptr;
-    vkMapMemory(vk.device, flag_sum_one_memory, 0, VK_WHOLE_SIZE, 0, &flag_sum_one_mapptr);
     
     
     
@@ -2954,13 +3018,11 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     // step 4 - sum scan
     VkDeviceMemory sum_scan_memory;
-    VkBuffer sum_scan_buffer = CreateBuffer(2 * blockcount * sizeof(u32), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+    VkBuffer sum_scan_buffer = CreateBuffer(2 * blockcount * sizeof(u32), 
+                                            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                             vk.device, gpu_memprops,
                                             &sum_scan_memory);
-    
-    void *sum_scan_mapptr;
-    vkMapMemory(vk.device, sum_scan_memory, 0, VK_WHOLE_SIZE, 0, &sum_scan_mapptr);
     
     
     
@@ -3016,13 +3078,11 @@ int CALLBACK WinMain(HINSTANCE instance,
     step6_in->resource_count = 6;
     
     VkDeviceMemory sorted_mortons_memory;
-    VkBuffer sorted_mortons_buffer = CreateBuffer(entrydata_size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+    VkBuffer sorted_mortons_buffer = CreateBuffer(entrydata_size,
+                                                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                   vk.device, gpu_memprops,
                                                   &sorted_mortons_memory);
-    
-    void *sorted_mortons_mapptr;
-    vkMapMemory(vk.device, sorted_mortons_memory, 0, VK_WHOLE_SIZE, 0, &sorted_mortons_mapptr);
     
     
     step6_in->resources = (resource_record *)calloc(step6_in->resource_count, sizeof(resource_record));
@@ -3079,6 +3139,8 @@ int CALLBACK WinMain(HINSTANCE instance,
 #define PRINT 0
     u32 printsize = 32;
     
+    u64 radix_start = TimerRead();
+    
     // a lot of emancipation's about to happen here...
     for(u32 i = 0; i < process_digitcount; i++)
     {
@@ -3100,10 +3162,10 @@ int CALLBACK WinMain(HINSTANCE instance,
         
         // - read output
         u32 *step1_output_flag_vector_zero = (u32 *)calloc(1, workdata_size);
-        memcpy(step1_output_flag_vector_zero, flag_vector_zero_mapptr, workdata_size);
+        ReadBuffer_u32(step1_output_flag_vector_zero, flag_vector_zero_buffer, workdata_size);
         
         u32 *step1_output_flag_vector_one  = (u32 *)calloc(1, workdata_size);
-        memcpy(step1_output_flag_vector_one, flag_vector_one_mapptr, workdata_size);
+        ReadBuffer_u32(step1_output_flag_vector_one, flag_vector_one_buffer, workdata_size);
         
         
         // - verify results
@@ -3176,10 +3238,10 @@ int CALLBACK WinMain(HINSTANCE instance,
         
         // - read results
         u32 *step2_output_scan_vector_zero = (u32 *)calloc(1, workdata_size);
-        memcpy(step2_output_scan_vector_zero, scan_vector_zero_mapptr, workdata_size);
+        ReadBuffer_u32(step2_output_scan_vector_zero, scan_vector_zero_buffer, workdata_size);
         
         u32 *step2_output_scan_vector_one  = (u32 *)calloc(1, workdata_size);
-        memcpy(step2_output_scan_vector_one,  scan_vector_one_mapptr,  workdata_size);
+        ReadBuffer_u32(step2_output_scan_vector_one,  scan_vector_one_buffer,  workdata_size);
         
         
 #if PRINT
@@ -3260,10 +3322,10 @@ int CALLBACK WinMain(HINSTANCE instance,
         vkResetFences(vk.device, 1, &vk.fence);
         
         u32 *step3_output_sum_vector_zero = (u32 *)calloc(blockcount, sizeof(u32));
-        memcpy(step3_output_sum_vector_zero, flag_sum_zero_mapptr, blockcount * sizeof(u32));
+        ReadBuffer_u32(step3_output_sum_vector_zero, flag_sum_zero_buffer, blockcount * sizeof(u32));
         
         u32 *step3_output_sum_vector_one  = (u32 *)calloc(blockcount, sizeof(u32));
-        memcpy(step3_output_sum_vector_one,  flag_sum_one_mapptr,  blockcount * sizeof(u32));
+        ReadBuffer_u32(step3_output_sum_vector_one,  flag_sum_one_buffer,  blockcount * sizeof(u32));
         
         
 #if PRINT
@@ -3325,7 +3387,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         
         
         u32 *step4_output_sum_scan = (u32 *)calloc(2 * blockcount, sizeof(u32));
-        memcpy(step4_output_sum_scan, sum_scan_mapptr, 2 * blockcount * sizeof(u32));
+        ReadBuffer_u32(step4_output_sum_scan, sum_scan_buffer, 2 * blockcount * sizeof(u32));
         
 #if PRINT
         ODS("\n STEP 4 \n");
@@ -3390,10 +3452,10 @@ int CALLBACK WinMain(HINSTANCE instance,
         
         
         u32 *step5_output_scan_vector_zero = (u32 *)calloc(1, workdata_size);
-        memcpy(step5_output_scan_vector_zero, scan_vector_zero_mapptr, workdata_size);
+        ReadBuffer_u32(step5_output_scan_vector_zero, scan_vector_zero_buffer, workdata_size);
         
         u32 *step5_output_scan_vector_one  = (u32 *)calloc(1, workdata_size);
-        memcpy(step5_output_scan_vector_one,  scan_vector_one_mapptr,  workdata_size);
+        ReadBuffer_u32(step5_output_scan_vector_one,  scan_vector_one_buffer,  workdata_size);
         
         
 #if PRINT
@@ -3486,13 +3548,18 @@ int CALLBACK WinMain(HINSTANCE instance,
 #endif
     }
     
+    u64 radix_time = TimerElapsedFrom(radix_start, MICROSECONDS);
+    string *radix_time_str = TimerString(radix_time);
+    ODS("Total radix time: %.*s \n", radix_time_str->length, radix_time_str->ptr);
+    FreeString(radix_time_str);
+    
     free(morton_data);
     
     
     
     // final check
     primitive_entry *sorted_mortons = (primitive_entry *)calloc(worksize, sizeof(primitive_entry));
-    memcpy(sorted_mortons, mortondata_mapptr, worksize * sizeof(primitive_entry));
+    ReadBuffer_primentry(sorted_mortons, mortondata_buffer, worksize * sizeof(primitive_entry));
     
 #if 0
     ODS("Sorted mortons: \n");
@@ -3515,15 +3582,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     ODS("MORTON SORT VALIDATION: %s \n", (correct == true) ? "PASSED" : "FAILED");
     
     
-    vkUnmapMemory(vk.device, flag_vector_zero_memory);
-    vkUnmapMemory(vk.device, flag_vector_one_memory);
-    vkUnmapMemory(vk.device, scan_vector_zero_memory);
-    vkUnmapMemory(vk.device, scan_vector_one_memory);
-    vkUnmapMemory(vk.device, flag_sum_zero_memory);
-    vkUnmapMemory(vk.device, flag_sum_one_memory);
-    vkUnmapMemory(vk.device, sum_scan_memory);
-    vkUnmapMemory(vk.device, mortondata_memory);
-    
+    //exit(0);
     
     
     
@@ -3532,9 +3591,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     //worksize = 32;
     
     primitive_entry *sorted_keys = (primitive_entry *)calloc(worksize, sizeof(primitive_entry));
-    memcpy(sorted_keys, sorted_mortons_mapptr, worksize*sizeof(primitive_entry));
-    
-    vkUnmapMemory(vk.device, sorted_mortons_memory);
+    ReadBuffer_primentry(sorted_keys, sorted_mortons_buffer, worksize*sizeof(primitive_entry));
     
     
     
