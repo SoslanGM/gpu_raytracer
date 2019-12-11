@@ -599,7 +599,7 @@ void TransitImageLayout(VkImageLayout old_layout, VkImageLayout new_layout, VkIm
 
 
 
-
+u32 frame_counter = 0;
 
 void Render()
 {
@@ -607,13 +607,15 @@ void Render()
     u32 xdim = ceil(r32(app.window_width)  / 32.0f);
     u32 ydim = ceil(r32(app.window_height) / 32.0f);
     
-    
     // transit compute image from shader_read_only to general
     TransitImageLayout(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, vk.computed_image,
                        vk.queue, vk.commandbuffer, vk.fence,
                        0, NULL,
                        0, NULL);
     
+    
+    
+    u64 ray_execution_start = TimerRead();
     
     vkUpdateDescriptorSets(vk.device, raytracing.ray_out->descwrite_count, raytracing.ray_out->descwrites, 0, NULL);
     
@@ -626,6 +628,11 @@ void Render()
     vkQueueSubmit(vk.queue, 1, &vk.compute_si, vk.fence);
     vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
     vkResetFences(vk.device, 1, &vk.fence);
+    
+    u64 ray_execution_time = TimerElapsedFrom(ray_execution_start, MICROSECONDS);
+    string *ray_execution_str = TimerString(ray_execution_time);
+    ODS("Tracing execution time %.*s \n", ray_execution_str->length, ray_execution_str->ptr);
+    FreeString(ray_execution_str);
     
     
     
@@ -663,24 +670,6 @@ void Render()
 #endif
     
     
-    
-    VkFramebufferCreateInfo framebuffer_ci = {};
-    framebuffer_ci.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebuffer_ci.pNext           = NULL;
-    framebuffer_ci.flags           = 0;
-    framebuffer_ci.renderPass      = vk.renderpass;
-    framebuffer_ci.attachmentCount = 1;
-    framebuffer_ci.width           = app.window_width;
-    framebuffer_ci.height          = app.window_height;
-    framebuffer_ci.layers          = 1;
-    for(u32 i = 0; i < 2; i++)
-    {
-        framebuffer_ci.pAttachments = &vk.swapchain_imageviews[i];
-        vkCreateFramebuffer(vk.device, &framebuffer_ci, NULL, &vk.framebuffers[i]);
-    }
-    
-    
-    
     VkClearValue clear_color = { 1.0f, 0.4f, 0.7f, 1.0f };
     
     VkRenderPassBeginInfo renderpass_bi = {};
@@ -691,6 +680,8 @@ void Render()
     renderpass_bi.renderArea      = vk.scissor;
     renderpass_bi.clearValueCount = 1;
     renderpass_bi.pClearValues    = &clear_color;
+    
+    
     
     
     
@@ -741,15 +732,18 @@ void Render()
     
     vkQueueWaitIdle(vk.queue);
     
+    
+    
+    
+    
     // transit swapchain image from present_src_khr to color_attachment_optimal
     TransitImageLayout(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, vk.swapchain_images[present_index],
                        vk.queue, vk.commandbuffer, vk.fence,
                        0, NULL,
                        0, NULL);
     
+    
     // cleanup
-    vkDestroyFramebuffer(vk.device, vk.framebuffers[0], NULL);
-    vkDestroyFramebuffer(vk.device, vk.framebuffers[1], NULL);
     vkDestroyFence(vk.device, fence_rendered, NULL);
 }
 
@@ -1858,6 +1852,7 @@ void StageBuffer_primentry(VkBuffer buffer, primitive_entry *data, u64 size)
 {
     StageBuffer_primentry(buffer, data, 0, 0, size);
 }
+
 void StageBuffer_treeentry(VkBuffer buffer, tree_entry *data, u64 srcOffset, u64 dstOffset, u64 size)
 {
     memcpy(vk.staging_mapptr, data, size);
@@ -1893,6 +1888,43 @@ void StageBuffer_treeentry(VkBuffer buffer, tree_entry *data, u64 size)
 {
     StageBuffer_treeentry(buffer, data, 0, 0, size);
 }
+
+void StageBuffer_aabbpadded(VkBuffer buffer, AABB_padded *data, u64 srcOffset, u64 dstOffset, u64 size)
+{
+    memcpy(vk.staging_mapptr, data, size);
+    
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    
+    VkBufferCopy staging_region = {};
+    staging_region.srcOffset = srcOffset;
+    staging_region.dstOffset = dstOffset;
+    staging_region.size      = size;
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, vk.staging_buffer, buffer, 1, &staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+}
+void StageBuffer_aabbpadded(VkBuffer buffer, AABB_padded *data, u64 size)
+{
+    StageBuffer_aabbpadded(buffer, data, 0, 0, size);
+}
+
 
 
 
@@ -2079,6 +2111,41 @@ void ReadBuffer_treeentry(tree_entry *data, VkBuffer buffer, u64 size)
     ReadBuffer_treeentry(data, buffer, 0, 0, size);
 }
 
+void ReadBuffer_aabbpadded(AABB_padded *data, VkBuffer buffer, u64 srcOffset, u64 dstOffset, u64 size)
+{
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    
+    VkBufferCopy staging_region = {};
+    staging_region.srcOffset = srcOffset;
+    staging_region.dstOffset = dstOffset;
+    staging_region.size      = size;
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, buffer, vk.staging_buffer, 1, &staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+    
+    memcpy(data, vk.staging_mapptr, size);
+}
+void ReadBuffer_aabbpadded(AABB_padded *data, VkBuffer buffer, u64 size)
+{
+    ReadBuffer_aabbpadded(data, buffer, 0, 0, size);
+}
 
 
 
@@ -2092,7 +2159,6 @@ void ReadBuffer_treeentry(tree_entry *data, VkBuffer buffer, u64 size)
 
 u64 time_framestart;
 u64 time_elapsed;
-u32 frame_counter = 0;
 
 #define RD 0 
 
@@ -2103,6 +2169,10 @@ int CALLBACK WinMain(HINSTANCE instance,
                      LPSTR commandLine,
                      int showMode)
 {
+    TimerSetup();
+    u64 startup_start = TimerRead();
+    
+    
     app.instance = instance;
     app.window_width = 1280;
     app.window_height = 720;
@@ -2272,8 +2342,6 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
     vkResetFences(vk.device, 1, &vk.fence);
     
-    
-    TimerSetup();
     
     // --- application setup is done.
     
@@ -3901,8 +3969,9 @@ int CALLBACK WinMain(HINSTANCE instance,
     // inputs: tree_check.
     
     VkDeviceMemory tree_depth_memory;
-    VkBuffer tree_depth_buffer = CreateBuffer(worksize * sizeof(u32), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+    VkBuffer tree_depth_buffer = CreateBuffer(worksize * sizeof(u32), 
+                                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                               vk.device, gpu_memprops,
                                               &tree_depth_memory);
     
@@ -3944,10 +4013,9 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     u32 *tree_depth_array = (u32 *)calloc(worksize, sizeof(u32));
-    void *tree_depth_mapptr;
-    vkMapMemory(vk.device, tree_depth_memory, 0, VK_WHOLE_SIZE, 0, &tree_depth_mapptr);
-    memcpy(tree_depth_array, tree_depth_mapptr, worksize * sizeof(u32));
-    vkUnmapMemory(vk.device, tree_depth_memory);
+    ReadBuffer_u32(tree_depth_array, tree_depth_buffer, worksize * sizeof(u32));
+    
+    
     
     u32 depth_levels[32] = {};
     for(u32 i = 0; i < worksize; i++)
@@ -4185,20 +4253,20 @@ int CALLBACK WinMain(HINSTANCE instance,
     // - bvh operating space with leaf boxes prefilled
     
     VkDeviceMemory atomic_counters_memory;
-    VkBuffer atomic_counters_buffer = CreateBuffer((worksize-1) * sizeof(u32), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+    VkBuffer atomic_counters_buffer = CreateBuffer((worksize-1) * sizeof(u32), 
+                                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                    vk.device, gpu_memprops,
                                                    &atomic_counters_memory);
     
     VkDeviceMemory bvh_memory;
-    VkBuffer bvh_buffer = CreateBuffer((2*worksize-1) * sizeof(AABB_padded), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT|VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+    VkBuffer bvh_buffer = CreateBuffer((2*worksize-1) * sizeof(AABB_padded), 
+                                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                        vk.device, gpu_memprops,
                                        &bvh_memory);
     
-    void *bvh_mapptr;
-    vkMapMemory(vk.device, bvh_memory, 0, VK_WHOLE_SIZE, 0, &bvh_mapptr);
-    memcpy(bvh_mapptr, bvh_gpu, (2*worksize-1) * sizeof(AABB_padded));
+    StageBuffer_aabbpadded(bvh_buffer, bvh_gpu, (2*worksize-1) * sizeof(AABB_padded));
     
     
     in_struct *bvh_in = (in_struct *)calloc(1, sizeof(in_struct));
@@ -4250,7 +4318,7 @@ int CALLBACK WinMain(HINSTANCE instance,
 #endif
     
     
-    memcpy(bvh_gpu, bvh_mapptr, (2*worksize-1)*sizeof(AABB_padded));
+    ReadBuffer_aabbpadded(bvh_gpu, bvh_buffer, (2*worksize-1)*sizeof(AABB_padded));
     
     
     // check bvh_cpu and bvh_gpu for equality
@@ -4268,7 +4336,6 @@ int CALLBACK WinMain(HINSTANCE instance,
             correct = false;
         }
     }
-    vkUnmapMemory(vk.device, bvh_memory);
     
     ODS("BVH verification: %s \n", correct ? "PASSED" : "FAILED");
     
@@ -4780,7 +4847,30 @@ int CALLBACK WinMain(HINSTANCE instance,
     vkUnmapMemory(vk.device, index_memory);
     
     
+    
+    VkFramebufferCreateInfo framebuffer_ci = {};
+    framebuffer_ci.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebuffer_ci.pNext           = NULL;
+    framebuffer_ci.flags           = 0;
+    framebuffer_ci.renderPass      = vk.renderpass;
+    framebuffer_ci.attachmentCount = 1;
+    framebuffer_ci.width           = app.window_width;
+    framebuffer_ci.height          = app.window_height;
+    framebuffer_ci.layers          = 1;
+    for(u32 i = 0; i < 2; i++)
+    {
+        framebuffer_ci.pAttachments = &vk.swapchain_imageviews[i];
+        vkCreateFramebuffer(vk.device, &framebuffer_ci, NULL, &vk.framebuffers[i]);
+    }
+    
+    
+    u64 startup_time = TimerElapsedFrom(startup_start, MICROSECONDS);
+    string *startup_time_str = TimerString(startup_time);
+    ODS("Time from launch to tracin': %.*s \n", startup_time_str->length, startup_time_str->ptr);
+    FreeString(startup_time_str);
+    
     time_framestart = TimerRead();
+    
     
     MSG msg;
     bool done = false;
@@ -4800,10 +4890,12 @@ int CALLBACK WinMain(HINSTANCE instance,
         RedrawWindow(app.window, NULL, NULL, RDW_INTERNALPAINT);
         
         time_elapsed = TimerElapsedFrom(time_framestart, MICROSECONDS);
+        // This needs to be compressed...
         string *timer = TimerString(time_elapsed);
         ODS("Frame %d %.*s \n", frame_counter, timer->length, timer->ptr);
-        frame_counter++;
         FreeString(timer);
+        // ---
+        frame_counter++;
         
         time_framestart = TimerRead();
     }

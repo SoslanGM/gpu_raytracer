@@ -65,32 +65,35 @@ float RayBox(ray r, bvh_entry b)
     uint t_counter = 0;
     float t_values[6];
     
+    float inv_dir_x = 1.0 / r.d.x;
+    float inv_dir_y = 1.0 / r.d.y;
+    float inv_dir_z = 1.0 / r.d.z;
     
     // x_min
-    float t = (x_min - r.o.x)/r.d.x;
+    float t = (x_min - r.o.x) * inv_dir_x;
     if((t_min < t) && (t < t_max))
     {
         float py = r.o.y + t * r.d.y;
         float pz = r.o.z + t * r.d.z;
         
         // check bounds
-        if(((b.lower.y < py)&&(py < b.upper.y)) &&
-           ((b.lower.z < pz)&&(pz < b.upper.z)))
+        if((py == min(max(b.lower.y, py), b.upper.y)) &&
+           (pz == min(max(b.lower.z, pz), b.upper.z)) )
         {
             t_values[t_counter++] = t;
         }
     }
     
     // x_max
-    t = (x_max - r.o.x)/r.d.x;
+    t = (x_max - r.o.x) * inv_dir_x;
     if((t_min < t) && (t < t_max))
     {
         float py = r.o.y + t * r.d.y;
         float pz = r.o.z + t * r.d.z;
         
         // check bounds
-        if(((b.lower.y < py)&&(py < b.upper.y)) &&
-           ((b.lower.z < pz)&&(pz < b.upper.z)))
+        if((py == min(max(b.lower.y, py), b.upper.y)) &&
+           (pz == min(max(b.lower.z, pz), b.upper.z)) )
         {
             t_values[t_counter++] = t;
         }
@@ -98,30 +101,30 @@ float RayBox(ray r, bvh_entry b)
     
     
     // y_min
-    t = (y_min - r.o.y)/r.d.y;
+    t = (y_min - r.o.y) * inv_dir_y;
     if((t_min < t) && (t < t_max))
     {
         float px = r.o.x + t * r.d.x;
         float pz = r.o.z + t * r.d.z;
         
         // check bounds
-        if(((b.lower.x < px)&&(px < b.upper.x)) &&
-           ((b.lower.z < pz)&&(pz < b.upper.z)))
+        if((px == min(max(b.lower.x, px), b.upper.x)) &&
+           (pz == min(max(b.lower.z, pz), b.upper.z)) )
         {
             t_values[t_counter++] = t;
         }
     }
     
     // y_max
-    t = (y_max - r.o.y)/r.d.y;
+    t = (y_max - r.o.y) * inv_dir_y;
     if((t_min < t) && (t < t_max))
     {
         float px = r.o.x + t * r.d.x;
         float pz = r.o.z + t * r.d.z;
         
         // check bounds
-        if(((b.lower.x < px)&&(px < b.upper.x)) &&
-           ((b.lower.z < pz)&&(pz < b.upper.z)))
+        if((px == min(max(b.lower.x, px), b.upper.x)) &&
+           (pz == min(max(b.lower.z, pz), b.upper.z)) )
         {
             t_values[t_counter++] = t;
         }
@@ -129,50 +132,46 @@ float RayBox(ray r, bvh_entry b)
     
     
     // z_min
-    t = (z_min - r.o.z)/r.d.z;
+    t = (z_min - r.o.z) * inv_dir_z;
     if((t_min < t) && (t < t_max))
     {
         float px = r.o.x + t * r.d.x;
         float py = r.o.y + t * r.d.y;
         
         // check bounds
-        if(((b.lower.x < px)&&(px < b.upper.x)) &&
-           ((b.lower.y < py)&&(py < b.upper.y)))
+        if((px == min(max(b.lower.x, px), b.upper.x)) &&
+           (py == min(max(b.lower.y, py), b.upper.y)) )
         {
             t_values[t_counter++] = t;
         }
     }
     
     // z_max
-    t = (z_max - r.o.z)/r.d.z;
+    t = (z_max - r.o.z) * inv_dir_z;
     if((t_min < t) && (t < t_max))
     {
         float px = r.o.x + t * r.d.x;
         float py = r.o.y + t * r.d.y;
         
         // check bounds
-        if(((b.lower.x < px)&&(px < b.upper.x)) &&
-           ((b.lower.y < py)&&(py < b.upper.y)))
+        if((px == min(max(b.lower.x, px), b.upper.x)) &&
+           (py == min(max(b.lower.y, py), b.upper.y)) )
         {
             t_values[t_counter++] = t;
         }
     }
     
-    
-    float minimal_t = t_max;
-    
     // now look through the values and select the minimal
-    for(uint i = 0; i < t_counter; i++)
-    {
-        if(minimal_t > t_values[i])
-            minimal_t = t_values[i];
-    }
     
     if(t_counter > 0)
+    {
+        float minimal_t = min(min(min(t_values[0], t_values[1]), t_values[2]), min(min(t_values[3], t_values[4]), t_values[5]));
         return minimal_t;
+    }
     else
         return t_max;
 }
+
 
 #define within(t) ((t_min < t) && (t < t_max))
 
