@@ -55,125 +55,84 @@ float RayBox(ray r, bvh_entry b)
     // second then subdivides into is it on the side of the box or somewhere in space.
     
     // test against all 6 planes, then pick the smallest across t_min < t < t_max.
-    float x_min = b.lower.x;
-    float x_max = b.upper.x;
-    float y_min = b.lower.y;
-    float y_max = b.upper.y;
-    float z_min = b.lower.z;
-    float z_max = b.upper.z;
+    float x_min = b.lower[0];
+    float x_max = b.upper[0];
+    float y_min = b.lower[1];
+    float y_max = b.upper[1];
+    float z_min = b.lower[2];
+    float z_max = b.upper[2];
     
-    uint t_counter = 0;
-    float t_values[6];
+    float t = t_max;
     
-    float inv_dir_x = 1.0 / r.d.x;
-    float inv_dir_y = 1.0 / r.d.y;
-    float inv_dir_z = 1.0 / r.d.z;
-    
-    // x_min
-    float t = (x_min - r.o.x) * inv_dir_x;
-    if((t_min < t) && (t < t_max))
+    // x
     {
-        float py = r.o.y + t * r.d.y;
-        float pz = r.o.z + t * r.d.z;
+        float inv_dir = 1.0 / r.d[0];
+        
+        float t0 = (x_min - r.o[0]) * inv_dir;
+        float t1 = (x_max - r.o[0]) * inv_dir;
+        
+        float t_lesser = min(t0, t1);
+        
+        float py = r.o[1] + t_lesser * r.d[1];
+        float pz = r.o[2] + t_lesser * r.d[2];
         
         // check bounds
-        if((py == min(max(b.lower.y, py), b.upper.y)) &&
-           (pz == min(max(b.lower.z, pz), b.upper.z)) )
+        if((py == min(max(y_min, py), y_max)) &&
+           (pz == min(max(z_min, pz), z_max)) )
         {
-            t_values[t_counter++] = t;
+            if((t_min < t_lesser) && (t_lesser < t))
+                t = t_lesser;
         }
     }
     
-    // x_max
-    t = (x_max - r.o.x) * inv_dir_x;
-    if((t_min < t) && (t < t_max))
+    // y
     {
-        float py = r.o.y + t * r.d.y;
-        float pz = r.o.z + t * r.d.z;
+        float inv_dir = 1.0 / r.d[1];
+        
+        float t0 = (y_min - r.o[1]) * inv_dir;
+        float t1 = (y_max - r.o[1]) * inv_dir;
+        
+        float t_lesser = min(t0, t1);
+        
+        float px = r.o[0] + t_lesser * r.d[0];
+        float pz = r.o[2] + t_lesser * r.d[2];
         
         // check bounds
-        if((py == min(max(b.lower.y, py), b.upper.y)) &&
-           (pz == min(max(b.lower.z, pz), b.upper.z)) )
+        if((px == min(max(x_min, px), x_max)) &&
+           (pz == min(max(z_min, pz), z_max)) )
         {
-            t_values[t_counter++] = t;
+            if((t_min < t_lesser) && (t_lesser < t))
+                t = t_lesser;
         }
     }
     
-    
-    // y_min
-    t = (y_min - r.o.y) * inv_dir_y;
-    if((t_min < t) && (t < t_max))
+    // z
     {
-        float px = r.o.x + t * r.d.x;
-        float pz = r.o.z + t * r.d.z;
+        float inv_dir = 1.0 / r.d[2];
+        
+        float t0 = (z_min - r.o[2]) * inv_dir;
+        float t1 = (z_max - r.o[2]) * inv_dir;
+        
+        float t_lesser = min(t0, t1);
+        
+        float px = r.o[0] + t_lesser * r.d[0];
+        float py = r.o[1] + t_lesser * r.d[1];
         
         // check bounds
-        if((px == min(max(b.lower.x, px), b.upper.x)) &&
-           (pz == min(max(b.lower.z, pz), b.upper.z)) )
+        if((px == min(max(x_min, px), x_max)) &&
+           (py == min(max(y_min, py), y_max)) )
         {
-            t_values[t_counter++] = t;
+            if((t_min < t_lesser) && (t_lesser < t))
+                t = t_lesser;
         }
     }
     
-    // y_max
-    t = (y_max - r.o.y) * inv_dir_y;
-    if((t_min < t) && (t < t_max))
-    {
-        float px = r.o.x + t * r.d.x;
-        float pz = r.o.z + t * r.d.z;
-        
-        // check bounds
-        if((px == min(max(b.lower.x, px), b.upper.x)) &&
-           (pz == min(max(b.lower.z, pz), b.upper.z)) )
-        {
-            t_values[t_counter++] = t;
-        }
-    }
-    
-    
-    // z_min
-    t = (z_min - r.o.z) * inv_dir_z;
-    if((t_min < t) && (t < t_max))
-    {
-        float px = r.o.x + t * r.d.x;
-        float py = r.o.y + t * r.d.y;
-        
-        // check bounds
-        if((px == min(max(b.lower.x, px), b.upper.x)) &&
-           (py == min(max(b.lower.y, py), b.upper.y)) )
-        {
-            t_values[t_counter++] = t;
-        }
-    }
-    
-    // z_max
-    t = (z_max - r.o.z) * inv_dir_z;
-    if((t_min < t) && (t < t_max))
-    {
-        float px = r.o.x + t * r.d.x;
-        float py = r.o.y + t * r.d.y;
-        
-        // check bounds
-        if((px == min(max(b.lower.x, px), b.upper.x)) &&
-           (py == min(max(b.lower.y, py), b.upper.y)) )
-        {
-            t_values[t_counter++] = t;
-        }
-    }
-    
-    // now look through the values and select the minimal
-    
-    if(t_counter > 0)
-    {
-        float minimal_t = min(min(min(t_values[0], t_values[1]), t_values[2]), min(min(t_values[3], t_values[4]), t_values[5]));
-        return minimal_t;
-    }
-    else
-        return t_max;
+    return t;
 }
 
 
-#define within(t) ((t_min < t) && (t < t_max))
+
+
 
 struct poly
 {
@@ -382,7 +341,7 @@ void main()
     
     int root = 0;
     hit_record h = Trace(r, root);
-    if(within(h.t) && (h.t < t_current))
+    if((t_min < h.t) && (h.t < t_current))
     {
         t_current = h.t;
         color = h.color;
@@ -390,7 +349,7 @@ void main()
     while(stack_counter > 0)
     {
         hit_record h = Trace(r, stack[--stack_counter]);
-        if(within(h.t) && (h.t < t_current))
+        if((t_min < h.t) && (h.t < t_current))
         {
             t_current = h.t;
             color = h.color;
