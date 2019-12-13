@@ -192,14 +192,14 @@ int stack_counter = 0;
 int stack[100];
 
 // what do you return?
-struct tri_record
+struct hit_record
 {
     float t;
     vec3 n;
 };
-tri_record RayTri(ray r, poly tri)
+hit_record RayTri(ray r, poly tri)
 {
-    tri_record rec;
+    hit_record rec;
     
     vec3 n_plane = normalize(cross(tri.v1-tri.v0, tri.v2-tri.v0));
     
@@ -243,11 +243,6 @@ tri_record RayTri(ray r, poly tri)
     return rec;
 }
 
-struct hit_record
-{
-    float t;
-    vec4 color;
-};
 hit_record Trace(ray r, int node)
 {
     while(node < node_count)
@@ -272,38 +267,23 @@ hit_record Trace(ray r, int node)
                 node = right;
             else
             {
-                hit_record h;
-                h.t = t_max;
-                return h;  // if you miss both children, time to go to next entry.
+                hit_record hit;
+                hit.t = t_max;
+                return hit;  // if you miss both children, time to go to next entry.
             }
         }
     }
     
     
     
-    // now we're dealing with a triangle
-    int obj_vertex_index_offset = 1;
-    int leaf_index = node - node_count + obj_vertex_index_offset;
-    // for the first triangle, node == 15487, node_count == 15487...
-    // ... so 0 is the correct index. 
+    // - processing triangle now
+    
+    int obj_index_start_with_one = 1;
+    int leaf_index = node - node_count + obj_index_start_with_one;
     
     poly tri = FetchTri(leaf_index);
-    tri_record rec = RayTri(r, tri);
     
-    hit_record h;
-    h.t = rec.t;
-    if(rec.t < t_max)
-    {
-        vec3 light_dir = normalize(vec3(cam_x, cam_y, cam_z));
-        
-        float diffuse_coeff = max(dot(rec.n, light_dir), 0.1);
-        vec3 diffuse = diffuse_coeff * light_color.rgb;
-        
-        h.color = vec4(monkey_color.rgb * diffuse, 1.0);
-    }
-    else;
-    
-    return h;
+    return RayTri(r, tri);
 }
 
 
@@ -336,24 +316,42 @@ void main()
     r.o = vec3(cam_x, cam_y, cam_z);
     r.d = vec3(image_coord, image_plane_z);
     
+    vec3 light_dir = normalize(vec3(cam_x, cam_y, cam_z));
+    
+    
+    
     float t_current = t_max;
-    vec4 color = sky_color;
+    vec3 normal;
     
     int root = 0;
-    hit_record h = Trace(r, root);
-    if((t_min < h.t) && (h.t < t_current))
+    hit_record hit = Trace(r, root);
+    if((t_min < hit.t) && (hit.t < t_current))
     {
-        t_current = h.t;
-        color = h.color;
+        t_current = hit.t;
+        normal = hit.n;
     }
     while(stack_counter > 0)
     {
-        hit_record h = Trace(r, stack[--stack_counter]);
-        if((t_min < h.t) && (h.t < t_current))
+        hit_record hit = Trace(r, stack[--stack_counter]);
+        if((t_min < hit.t) && (hit.t < t_current))
         {
-            t_current = h.t;
-            color = h.color;
+            t_current = hit.t;
+            normal = hit.n;
         }
+    }
+    
+    
+    
+    vec4 color;
+    
+    if(t_current == t_max)
+        color = sky_color;
+    else
+    {
+        float diffuse_coeff = max(dot(normal, light_dir), 0.1);
+        vec3 diffuse = diffuse_coeff * light_color.rgb;
+        
+        color = vec4(monkey_color.rgb * diffuse, 1.0);
     }
     
     imageStore(im, ivec2(coord.x, HEIGHT-coord.y), color);
