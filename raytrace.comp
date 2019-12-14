@@ -3,7 +3,9 @@
 #define WIDTH 1280
 #define HEIGHT 720
 
-layout (local_size_x = 32, local_size_y = 32, local_size_z = 1) in;  // I wonder what's the difference gonna be with 32,1,1. 
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+//layout (local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 
 layout (push_constant) uniform range
 {
@@ -188,8 +190,16 @@ float cam_y = 0.0;
 float cam_z = 25.0;
 
 
+#define EXPERIMENT 1
+
+int substack_size = 24;
 int stack_counter = 0;
-int stack[100];
+#if EXPERIMENT
+shared int stack[8*8*24];  // group_width*group_height*substack
+//shared int stack[32*32*16];  // group_width*group_height*substack
+#elif !EXPERIMENT
+int stack[24];
+#endif
 
 // what do you return?
 struct hit_record
@@ -222,14 +232,14 @@ hit_record RayTri(ray r, poly tri)
     // - Now let's see if the point belongs to the triangle.
     vec3 point = r.o + r.d * t;
     
-    float det_m = determinant(mat3(tri.v0, tri.v1, tri.v2));
+    float rev_det_m = 1.0 / determinant(mat3(tri.v0, tri.v1, tri.v2));
     float det_a = determinant(mat3(point,  tri.v1, tri.v2));
     float det_b = determinant(mat3(tri.v0, point,  tri.v2));
     float det_c = determinant(mat3(tri.v0, tri.v1, point));
     
-    float a = det_a / det_m;
-    float b = det_b / det_m;
-    float c = det_c / det_m;
+    float a = det_a * rev_det_m;
+    float b = det_b * rev_det_m;
+    float c = det_c * rev_det_m;
     
     vec3 n_point = (a * tri.n0 + b * tri.n1 + c * tri.n2) / (a+b+c);
     
@@ -259,7 +269,14 @@ hit_record Trace(ray r, int node)
         {
             node = left;
             if(right_hit)
+            {
+#if EXPERIMENT
+                stack[gl_LocalInvocationIndex*substack_size+stack_counter] = right;
+                stack_counter++;
+#elif !EXPERIMENT
                 stack[stack_counter++] = right;
+#endif
+            }
         }
         else
         {
@@ -320,6 +337,8 @@ void main()
     
     
     
+    
+    
     float t_current = t_max;
     vec3 normal;
     
@@ -328,25 +347,29 @@ void main()
     if((t_min < hit.t) && (hit.t < t_current))
     {
         t_current = hit.t;
-        normal = hit.n;
+        normal    = hit.n;
     }
     while(stack_counter > 0)
     {
+#if EXPERIMENT
+        stack_counter--;
+        hit_record hit = Trace(r, stack[gl_LocalInvocationIndex*substack_size+stack_counter]);
+#elif !EXPERIMENT
         hit_record hit = Trace(r, stack[--stack_counter]);
+#endif
         if((t_min < hit.t) && (hit.t < t_current))
         {
             t_current = hit.t;
-            normal = hit.n;
+            normal    = hit.n;
         }
     }
     
     
     
-    vec4 color;
     
-    if(t_current == t_max)
-        color = sky_color;
-    else
+    
+    vec4 color = sky_color;
+    if(t_current < t_max)
     {
         float diffuse_coeff = max(dot(normal, light_dir), 0.1);
         vec3 diffuse = diffuse_coeff * light_color.rgb;

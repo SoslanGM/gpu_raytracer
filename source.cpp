@@ -604,8 +604,10 @@ u32 frame_counter = 0;
 void Render()
 {
 #define debug 0
-    u32 xdim = ceil(r32(app.window_width)  / 32.0f);
-    u32 ydim = ceil(r32(app.window_height) / 32.0f);
+    //u32 group_radius = 32.0f;
+    u32 group_radius = 8.0f;
+    u32 xdim = ceil(r32(app.window_width)  / group_radius);
+    u32 ydim = ceil(r32(app.window_height) / group_radius);
     
     // transit compute image from shader_read_only to general
     TransitImageLayout(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, vk.computed_image,
