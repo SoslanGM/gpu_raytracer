@@ -604,8 +604,8 @@ u32 frame_counter = 0;
 void Render()
 {
 #define debug 0
-    //u32 group_radius = 32.0f;
-    u32 group_radius = 8.0f;
+    u32 group_radius = 32.0f;
+    //u32 group_radius = 8.0f;
     u32 xdim = ceil(r32(app.window_width)  / group_radius);
     u32 ydim = ceil(r32(app.window_height) / group_radius);
     
@@ -2352,8 +2352,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // - Resources
-    //char *model_file = "../assets/bunny.obj";
-    char *model_file = "../assets/suzanne.obj";
+    char *model_file = "../assets/bunny.obj";
+    //char *model_file = "../assets/suzanne.obj";
     
     ParsedOBJ model_obj = LoadOBJ(model_file);
     ParsedOBJRenderable model = model_obj.renderables[0];
@@ -2428,7 +2428,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     //VkDeviceMemory staging_memory;
-    vk.staging_buffer = CreateBuffer(MEGABYTE,
+    vk.staging_buffer = CreateBuffer(10 * MEGABYTE,
                                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                      vk.device, gpu_memprops,

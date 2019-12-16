@@ -4,8 +4,8 @@
 #define HEIGHT 720
 
 
-layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
-//layout (local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
+//layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout (local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 
 layout (push_constant) uniform range
 {
@@ -51,7 +51,8 @@ struct ray
     vec3 d;
 };
 
-float RayBox(ray r, bvh_entry b)
+
+bool RayBox(ray r, bvh_entry b)
 {
     // two categories of hits: parallel and not.
     // second then subdivides into is it on the side of the box or somewhere in space.
@@ -129,11 +130,8 @@ float RayBox(ray r, bvh_entry b)
         }
     }
     
-    return t;
+    return (t < t_max);
 }
-
-
-
 
 
 struct poly
@@ -190,7 +188,7 @@ float cam_y = 0.0;
 float cam_z = 25.0;
 
 
-#define EXPERIMENT 1
+#define EXPERIMENT 0
 
 int substack_size = 24;
 int stack_counter = 0;
@@ -255,15 +253,13 @@ hit_record RayTri(ray r, poly tri)
 
 hit_record Trace(ray r, int node)
 {
-    while(node < node_count)
+    while(node < node_count-1)
     {
         int left  = tree[node].left;
         int right = tree[node].right;
         
-        float left_t  = RayBox(r, bvh[left]);
-        float right_t = RayBox(r, bvh[right]);
-        bool left_hit  = (left_t < t_max)  ? true : false;
-        bool right_hit = (right_t < t_max) ? true : false;
+        bool left_hit  = RayBox(r, bvh[left]);
+        bool right_hit = RayBox(r, bvh[right]);
         
         if(left_hit)
         {
