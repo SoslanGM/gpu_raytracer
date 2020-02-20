@@ -1535,23 +1535,32 @@ typedef struct
 
 typedef struct
 {
-    //s32 d;
-    //s32 delta_min;
-    //s32 delta_node;
     s32 parent;
     s32 left;
     s32 right;
 } tree_entry;
 typedef struct
 {
-    //s32 d;
-    //s32 delta_min;
-    //s32 delta_node;
     s32 parent;
     s32 left;
     s32 right;
     s32 pad;
 } tree_entry_padded;
+
+typedef struct
+{
+    s32 d;
+    s32 delta_min;
+    s32 delta_node;
+} tree_debug_entry;
+typedef struct
+{
+    s32 d;
+    s32 delta_min;
+    s32 delta_node;
+    s32 pad;
+} tree_debug_entry_padded;
+
 
 typedef struct 
 {
@@ -1891,6 +1900,42 @@ void StageBuffer_treeentry(VkBuffer buffer, tree_entry *data, u64 size)
     StageBuffer_treeentry(buffer, data, 0, 0, size);
 }
 
+void StageBuffer_treedebugentry(VkBuffer buffer, tree_debug_entry *data, u64 srcOffset, u64 dstOffset, u64 size)
+{
+    memcpy(vk.staging_mapptr, data, size);
+    
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    
+    VkBufferCopy staging_region = {};
+    staging_region.srcOffset = srcOffset;
+    staging_region.dstOffset = dstOffset;
+    staging_region.size      = size;
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, vk.staging_buffer, buffer, 1, &staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+}
+void StageBuffer_treedebugentry(VkBuffer buffer, tree_debug_entry *data, u64 size)
+{
+    StageBuffer_treedebugentry(buffer, data, 0, 0, size);
+}
+
 void StageBuffer_aabbpadded(VkBuffer buffer, AABB_padded *data, u64 srcOffset, u64 dstOffset, u64 size)
 {
     memcpy(vk.staging_mapptr, data, size);
@@ -2112,6 +2157,43 @@ void ReadBuffer_treeentry(tree_entry *data, VkBuffer buffer, u64 size)
 {
     ReadBuffer_treeentry(data, buffer, 0, 0, size);
 }
+
+void ReadBuffer_treedebugentry(tree_debug_entry *data, VkBuffer buffer, u64 srcOffset, u64 dstOffset, u64 size)
+{
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    
+    VkBufferCopy staging_region = {};
+    staging_region.srcOffset = srcOffset;
+    staging_region.dstOffset = dstOffset;
+    staging_region.size      = size;
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, buffer, vk.staging_buffer, 1, &staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+    
+    memcpy(data, vk.staging_mapptr, size);
+}
+void ReadBuffer_treedebugentry(tree_debug_entry *data, VkBuffer buffer, u64 size)
+{
+    ReadBuffer_treedebugentry(data, buffer, 0, 0, size);
+}
+
 
 void ReadBuffer_aabbpadded(AABB_padded *data, VkBuffer buffer, u64 srcOffset, u64 dstOffset, u64 size)
 {
@@ -2352,8 +2434,11 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // - Resources
-    char *model_file = "../assets/bunny.obj";
-    //char *model_file = "../assets/suzanne.obj";
+    char *model_file = "../assets/suzanne.obj";
+    //char *model_file = "../assets/bunny.obj";
+    //char *model_file = "../assets/dragon.obj";
+    //char *model_file = "../assets/buddha.obj";
+    
     
     ParsedOBJ model_obj = LoadOBJ(model_file);
     ParsedOBJRenderable model = model_obj.renderables[0];
@@ -3746,18 +3831,35 @@ int CALLBACK WinMain(HINSTANCE instance,
                                         &tree_memory);
     
     
-    tree_entry *tree_data = (tree_entry *)calloc(2*worksize-1, sizeof(tree_entry));
+    tree_entry *tree_gpu = (tree_entry *)calloc(2*worksize-1, sizeof(tree_entry));
     
-    tree_data[0].parent = -1;  // the root has no parent
+    tree_gpu[0].parent = -1;  // the root has no parent
     
     // write -1 to left and right of leaves, as they have no children
     for(u32 i = worksize-1; i < 2*worksize-1; i++)
     {
-        tree_data[i].left  = -1;
-        tree_data[i].right = -1;
+        tree_gpu[i].left  = -1;
+        tree_gpu[i].right = -1;
     }
     
-    StageBuffer_treeentry(tree_buffer, tree_data, tree_datasize);
+    StageBuffer_treeentry(tree_buffer, tree_gpu, tree_datasize);
+    
+    
+    
+    u32 tree_debug_datasize = tree_datasize;
+    
+    VkDeviceMemory tree_debug_memory;
+    VkBuffer tree_debug_buffer = CreateBuffer(tree_debug_datasize, 
+                                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                              vk.device, gpu_memprops,
+                                              &tree_debug_memory);
+    
+    tree_debug_entry *tree_debug_gpu = (tree_debug_entry *)calloc(2*worksize-1, sizeof(tree_debug_entry));
+    
+    StageBuffer_treedebugentry(tree_debug_buffer, tree_debug_gpu, tree_debug_datasize);
+    
+    
     
     
     
@@ -3765,8 +3867,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     in_struct *tree_in = (in_struct *)calloc(1, sizeof(in_struct));
     tree_in->shader_file = String("../code/tree_shader.spv");
     
-    tree_in->resource_count = 2;
-    
+    tree_in->resource_count = 3;
     tree_in->resources = (resource_record *)calloc(tree_in->resource_count, sizeof(resource_record));
     tree_in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     tree_in->resources[0].buffer = sorted_mortons_buffer;
@@ -3774,12 +3875,17 @@ int CALLBACK WinMain(HINSTANCE instance,
     tree_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     tree_in->resources[1].buffer = tree_buffer;
     tree_in->resources[1].memory = tree_memory;
+    tree_in->resources[2].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    tree_in->resources[2].buffer = tree_debug_buffer;
+    tree_in->resources[2].memory = tree_debug_memory;
     
     tree_in->pcr_size = 1;
     tree_in->pcr_data = (u32 *)calloc(tree_in->pcr_size, sizeof(u32));
     tree_in->pcr_data[0] = worksize;
     
     out_struct *tree_out = CreateComputePipeline(tree_in);
+    
+    
     
     
     blockcount = worksize / blocksize;
@@ -3802,23 +3908,30 @@ int CALLBACK WinMain(HINSTANCE instance,
     result = vkResetFences(vk.device, 1, &vk.fence);
     ODS_RES("Suspicious fence reset: %s \n");
     
-    ReadBuffer_treeentry(tree_data, tree_buffer, tree_datasize);
+    ReadBuffer_treeentry(tree_gpu, tree_buffer, tree_datasize);
     
+    
+    ReadBuffer_treedebugentry(tree_debug_gpu, tree_debug_buffer, tree_debug_datasize);
     
     
     u32 *sorted_values = (u32 *)calloc(worksize, sizeof(u32));
     for(u32 i = 0; i < worksize; i++)
         sorted_values[i] = sorted_keys[i].code;
     
-    tree_entry *tree_check = (tree_entry *)calloc(2*worksize-1, sizeof(tree_entry));  // FREE after the validation
-    tree_check[0].parent = -1;
+    tree_entry *tree_cpu = (tree_entry *)calloc(2*worksize-1, sizeof(tree_entry));  // FREE after the validation
+    tree_cpu[0].parent = -1;
     
     u32 n = worksize;
     for(u32 i = (n-1); i < (2*n-1); i++)
     {
-        tree_check[i].left  = -1;
-        tree_check[i].right = -1;
+        tree_cpu[i].left  = -1;
+        tree_cpu[i].right = -1;
     }
+    
+    tree_debug_entry *tree_debug_cpu = (tree_debug_entry *)calloc(2*worksize-1, sizeof(tree_debug_entry));
+    
+    
+    
     
     
     // last index == n-2, so processing n-1 elements
@@ -3827,7 +3940,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         s32 d = ((delta(sorted_values, n, i, i+1) - delta(sorted_values, n, i, i-1)) > 0) ? 1: -1;
         
         s32 delta_min = delta(sorted_values, n, i, i-d);
-        //tree_check[i].delta_min = delta_min;
+        tree_debug_cpu[i].delta_min = delta_min;
         
         s32 lmax = 2;
         while(delta(sorted_values, n, i, i+lmax*d) > delta_min)
@@ -3850,7 +3963,7 @@ int CALLBACK WinMain(HINSTANCE instance,
         if(i != j)
         {
             s32 delta_node = delta(sorted_values, n, i, j);
-            //tree_check[i].delta_node = delta_node;
+            tree_debug_cpu[i].delta_node = delta_node;
             
             s32 s = 0;
             r32 m = 2.0f;
@@ -3871,20 +3984,20 @@ int CALLBACK WinMain(HINSTANCE instance,
             gamma = min(i, j);
         
         if(min(i,j) == gamma)
-            tree_check[i].left = gamma+(n-1);
+            tree_cpu[i].left = gamma+(n-1);
         else
-            tree_check[i].left = gamma;
+            tree_cpu[i].left = gamma;
         
         if(max(i,j) == (gamma+1))
-            tree_check[i].right = gamma+1+(n-1);
+            tree_cpu[i].right = gamma+1+(n-1);
         else
-            tree_check[i].right = gamma+1;
+            tree_cpu[i].right = gamma+1;
         
-        //tree_check[i].d = d;
+        tree_debug_cpu[i].d = d;
 #if 1
         //ODS("Closing in on the suspect \n");
-        s32 left_index  = tree_check[i].left;
-        s32 right_index = tree_check[i].right;
+        s32 left_index  = tree_cpu[i].left;
+        s32 right_index = tree_cpu[i].right;
         if((left_index < 0) || (left_index >= (2*worksize-1)))
         {
             ODS("ALARM!!! %5d, left = %d \n", i, left_index);
@@ -3896,22 +4009,29 @@ int CALLBACK WinMain(HINSTANCE instance,
             //exit(0);
         }
         
-        tree_check[left_index].parent  = i;
-        tree_check[right_index].parent = i;
+        tree_cpu[left_index].parent  = i;
+        tree_cpu[right_index].parent = i;
 #endif
     }
     
     correct = true;
     for(u32 i = 0; i < (2*worksize-1); i++)
     {
-        if((tree_data[i].parent     != tree_check[i].parent)     ||
-           (tree_data[i].left       != tree_check[i].left)       ||
-           (tree_data[i].right      != tree_check[i].right))
+        if((tree_gpu[i].parent     != tree_cpu[i].parent)     ||
+           (tree_gpu[i].left       != tree_cpu[i].left)       ||
+           (tree_gpu[i].right      != tree_cpu[i].right)      ||
+           (tree_debug_gpu[i].d          != tree_debug_cpu[i].d)          ||
+           (tree_debug_gpu[i].delta_min  != tree_debug_cpu[i].delta_min)  ||
+           (tree_debug_gpu[i].delta_node != tree_debug_cpu[i].delta_node))
         {
             ODS("- Divergence at %s %d \n", (i < worksize) ? "node" : "leaf", i);
             ODS("-- GPU: [%5d | %5d %5d], CPU: [%5d | %5d %5d] \n",
-                tree_data[i].parent,  tree_data[i].left,  tree_data[i].right,
-                tree_check[i].parent, tree_check[i].left, tree_check[i].right);
+                tree_gpu[i].parent, tree_gpu[i].left, tree_gpu[i].right,
+                tree_cpu[i].parent, tree_cpu[i].left, tree_cpu[i].right);
+            ODS("        [%5d | %5d %5d],      [%5d | %5d %5d] \n",
+                tree_debug_gpu[i].d, tree_debug_gpu[i].delta_min, tree_debug_gpu[i].delta_node,
+                tree_debug_cpu[i].d, tree_debug_cpu[i].delta_min, tree_debug_cpu[i].delta_node);
+            ODS("\n");
             
             correct = false;
         }
@@ -3919,6 +4039,15 @@ int CALLBACK WinMain(HINSTANCE instance,
     ODS("Tree construction verification: %s \n", correct ? "PASSED" : "FAILED");
     
     //ODS("Look at the tree here \n");
+    
+    
+    
+    // write the cpu-calculated tree to the GPU, see if that will work with the models
+    
+    
+    
+    
+    
     
     // check to see if there's a lost leaf or if index assignment is incorrect
     // TO DO: there is no provision on some of the compute steps for thread counts not cleanly divisible by 32. DANGER!
@@ -3968,7 +4097,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     // Later, counting up all the depth values tells me how many there are on each level,
     //  and I can write nodes into lists of levels. Then I'll have an easy time calcing AABBs on CPU.
     
-    // inputs: tree_check.
+    // inputs: tree_cpu.
     
     VkDeviceMemory tree_depth_memory;
     VkBuffer tree_depth_buffer = CreateBuffer(worksize * sizeof(u32), 
@@ -4046,10 +4175,10 @@ int CALLBACK WinMain(HINSTANCE instance,
     u32 depth = 0;
     u32 node = node_start;
 #if 1
-    while(tree_check[node].parent != -1)
+    while(tree_cpu[node].parent != -1)
     {
         ODS("%d -> ", node);
-        node = tree_check[node].parent;
+        node = tree_cpu[node].parent;
         depth++;
     }
     ODS("%d \n", node);
@@ -4057,10 +4186,10 @@ int CALLBACK WinMain(HINSTANCE instance,
 #if 1
     while(true)
     {
-        if(tree_data[node].parent != -1)
+        if(tree_gpu[node].parent != -1)
         {
             depth++;
-            node = tree_data[node].parent;
+            node = tree_gpu[node].parent;
         }
         else
         {
@@ -4193,8 +4322,8 @@ int CALLBACK WinMain(HINSTANCE instance,
             for(u32 j = 0; j < depth_levels[i]; j++)
             {
                 u32 node = depth_arrays[i][j];
-                u32 left  = tree_check[node].left;
-                u32 right = tree_check[node].right;
+                u32 left  = tree_cpu[node].left;
+                u32 right = tree_cpu[node].right;
                 
 #if 0            
                 ODS("Box of left(%5d): \n", left);
@@ -4283,6 +4412,9 @@ int CALLBACK WinMain(HINSTANCE instance,
     bvh_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     bvh_in->resources[1].buffer = tree_buffer;
     bvh_in->resources[1].memory = tree_memory;
+    //bvh_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    //bvh_in->resources[1].buffer = tree_buffer_cpu;
+    //bvh_in->resources[1].memory = tree_memory_cpu;
     bvh_in->resources[2].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     bvh_in->resources[2].buffer = bvh_buffer;
     bvh_in->resources[2].memory = bvh_memory;

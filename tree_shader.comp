@@ -14,16 +14,20 @@ struct entry
 };
 struct tree_node
 {
-    //int d;
-    //int delta_min;
-    //int delta_node;
     int parent;
     int left;
     int right;
 };
-layout (std430, set = 0, binding = 0) coherent buffer morton { entry     sorted_keys[]; };
-layout (std430, set = 0, binding = 1) coherent buffer tree   { tree_node tree_data[];   };
+struct tree_debug_node
+{
+    int d;
+    int delta_min;
+    int delta_node;
+};
 
+layout (std430, set = 0, binding = 0) coherent buffer morton    { entry           sorted_keys[]; };
+layout (std430, set = 0, binding = 1) coherent buffer tree      { tree_node       tree_data[];   };
+layout (std430, set = 0, binding = 2) coherent buffer treedebug { tree_debug_node tree_debug[];  };
 
 // return length of common prefix of two keys
 // Delta only accepts MORTON CODES! So I need to fetch them inside this function.
@@ -56,7 +60,7 @@ void main()
     int d = sign(delta(i, i+1) - delta(i, i-1));
     
     int delta_min = delta(i, i-d);
-    //tree_data[i].delta_min = delta_min;
+    tree_debug[i].delta_min = delta_min;
     
     // find lmax to determine the end: (i,j) j = i+ld
     int lmax = 2;
@@ -78,7 +82,7 @@ void main()
     if(i != j)
     {
         int delta_node = delta(i, j);  // is it here that we're checking for if the keys are one and the same?
-        //tree_data[i].delta_node = delta_node;
+        tree_debug[i].delta_node = delta_node;
         
         int s = 0;
         // find biggest s of split, where delta(i,i+s*d) > delta_node
@@ -107,7 +111,7 @@ void main()
     else
         tree_data[i].right = gamma+1;
     
-    //tree_data[i].d = d;
+    tree_debug[i].d = d;
     tree_data[tree_data[i].left].parent  = i;
     tree_data[tree_data[i].right].parent = i;
 }

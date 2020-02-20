@@ -15,6 +15,7 @@ layout (push_constant) uniform range
 
 // is this not gonna require padding?...
 layout (std430, set = 0, binding = 0) coherent buffer _counters { int counters[]; };  // counters
+
 struct tree_entry
 {
     int parent;
