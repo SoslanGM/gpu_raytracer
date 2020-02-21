@@ -572,7 +572,12 @@ void TransitImageLayout(VkImageLayout old_layout, VkImageLayout new_layout, VkIm
                          0, NULL,
                          1, &barrier);
     vkEndCommandBuffer(command_buffer);
-    vkQueueSubmit(queue, 1, &queue_si, fence);
+    VkResult sub_result = vkQueueSubmit(queue, 1, &queue_si, fence);
+    if(sub_result == VK_ERROR_DEVICE_LOST)
+    {
+        ODS("\n\n\n]]]}}}>>> DROPPED IT\n\n\n");
+        exit(0);
+    }
     
 #if debug    
     ODS("Waiting on transit fence\n");
@@ -999,9 +1004,9 @@ void CreateImage(VkImage *image, VkDeviceMemory *memory,
 void CreateImageView(VkImage *image, VkImageView *imageview)
 {
     VkComponentMapping components = {};
-    components.r = VK_COMPONENT_SWIZZLE_B;
+    components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
     components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-    components.b = VK_COMPONENT_SWIZZLE_R;
+    components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
     components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
     
     VkImageViewCreateInfo imageview_ci = {};
@@ -2583,9 +2588,9 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     // - Resources
-    char *model_file = "../assets/suzanne.obj";
+    //char *model_file = "../assets/suzanne.obj";
     //char *model_file = "../assets/bunny.obj";
-    //char *model_file = "../assets/dragon.obj";
+    char *model_file = "../assets/dragon.obj";
     //char *model_file = "../assets/buddha.obj";
     
     
@@ -2654,7 +2659,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     // - Minmax: GPU execution
     
-    u32 worksize = model_tricount;
+    u32 worksize = model_tricount;  // 144046
     
     VkPhysicalDeviceMemoryProperties gpu_memprops;
     vkGetPhysicalDeviceMemoryProperties(vk.gpu, &gpu_memprops);
@@ -4041,7 +4046,8 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     
-    blockcount = worksize / blocksize;
+    //blockcount = worksize / blocksize;
+    //blockcount = (u32)ceil((r32)worksize / (r32)blocksize);
     
     vkUpdateDescriptorSets(vk.device, tree_out->descwrite_count, tree_out->descwrites, 0, NULL);
     
