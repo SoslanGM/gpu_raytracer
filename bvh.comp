@@ -21,6 +21,7 @@ struct tree_entry
     int parent;
     int left;
     int right;
+    int pad;
 };
 layout (std430, set = 0, binding = 1) coherent buffer _tree { tree_entry tree[]; };  // tree data
 // padded - vec4, not vec3

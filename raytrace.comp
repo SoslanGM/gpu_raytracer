@@ -18,6 +18,7 @@ struct tree_entry
     int parent;
     int left;
     int right;
+    int pad;
 };
 layout (std430, set = 0, binding = 0) coherent buffer _tree  { tree_entry tree[];  };
 struct bvh_entry
@@ -301,7 +302,7 @@ hit_record Trace(ray r, int node)
 
 
 
-void main()
+void main0()
 {
     if(gl_GlobalInvocationID.x > WIDTH || gl_GlobalInvocationID.y > HEIGHT)
         return;
@@ -363,6 +364,69 @@ void main()
     
     
     
+    
+    vec4 color = sky_color;
+    if(t_current < t_max)
+    {
+        float diffuse_coeff = max(dot(normal, light_dir), 0.1);
+        vec3 diffuse = diffuse_coeff * light_color.rgb;
+        
+        color = vec4(monkey_color.rgb * diffuse, 1.0);
+    }
+    
+    imageStore(im, ivec2(coord.x, HEIGHT-coord.y), color);
+}
+
+void main()
+{
+    if(gl_GlobalInvocationID.x > WIDTH || gl_GlobalInvocationID.y > HEIGHT)
+        return;
+    
+    vec2 coord = gl_GlobalInvocationID.xy;
+    
+    
+    
+    // Map the image coords to the image plane; 1280,720 to 4,3- ratio's 16:9 though!
+    // Top left corner + the thread coords.
+    float x_initial = WIDTH;
+    float x_final = 1.6f;
+    float y_initial = HEIGHT;
+    float y_final = 0.9f * (WIDTH / HEIGHT);
+    
+    float x_inc = x_final / x_initial;
+    float y_inc = y_final / y_initial;
+    
+    float image_plane_z = -10.0;
+    
+    vec2 top_left;
+    top_left.x = - x_final / 2.0;
+    top_left.y = - y_final / 2.0;
+    vec2 image_coord = vec2(top_left.x + x_inc * coord.x, top_left.y + y_inc * coord.y);
+    
+    ray r;
+    r.o = vec3(cam_x, cam_y, cam_z);
+    r.d = vec3(image_coord, image_plane_z);
+    
+    vec3 light_dir = normalize(vec3(cam_x, cam_y, cam_z));
+    
+    
+    
+    float t_current = t_max;
+    vec3 normal;
+    
+    
+    
+    for(int i = 20000; i < 30000; i++)
+    {
+        poly tri = FetchTri(i);
+        hit_record hit = RayTri(r, tri);
+        
+        if((t_min < hit.t) && (hit.t < t_current))
+        {
+            t_current = hit.t;
+            normal    = hit.n;
+        }
+    }
     
     vec4 color = sky_color;
     if(t_current < t_max)

@@ -9,12 +9,10 @@ layout (push_constant) uniform range
 
 struct tree_entry
 {
-    //int d;
-    //int delta_min;
-    //int delta_node;
     int parent;
     int left;
     int right;
+    int pad;
 };
 layout (std430, set = 0, binding = 0) coherent buffer TreeData   { tree_entry tree_data[]; };
 layout (std430, set = 0, binding = 1) coherent buffer TreeDepths { uint tree_depths[]; };

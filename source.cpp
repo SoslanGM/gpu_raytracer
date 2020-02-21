@@ -1900,6 +1900,44 @@ void StageBuffer_treeentry(VkBuffer buffer, tree_entry *data, u64 size)
     StageBuffer_treeentry(buffer, data, 0, 0, size);
 }
 
+
+void StageBuffer_treeentrypadded(VkBuffer buffer, tree_entry_padded *data, u64 srcOffset, u64 dstOffset, u64 size)
+{
+    memcpy(vk.staging_mapptr, data, size);
+    
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    
+    VkBufferCopy staging_region = {};
+    staging_region.srcOffset = srcOffset;
+    staging_region.dstOffset = dstOffset;
+    staging_region.size      = size;
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, vk.staging_buffer, buffer, 1, &staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+}
+void StageBuffer_treeentrypadded(VkBuffer buffer, tree_entry_padded *data, u64 size)
+{
+    StageBuffer_treeentrypadded(buffer, data, 0, 0, size);
+}
+
+
 void StageBuffer_treedebugentry(VkBuffer buffer, tree_debug_entry *data, u64 srcOffset, u64 dstOffset, u64 size)
 {
     memcpy(vk.staging_mapptr, data, size);
@@ -1935,6 +1973,44 @@ void StageBuffer_treedebugentry(VkBuffer buffer, tree_debug_entry *data, u64 siz
 {
     StageBuffer_treedebugentry(buffer, data, 0, 0, size);
 }
+
+
+void StageBuffer_treedebugentrypadded(VkBuffer buffer, tree_debug_entry_padded *data, u64 srcOffset, u64 dstOffset, u64 size)
+{
+    memcpy(vk.staging_mapptr, data, size);
+    
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    
+    VkBufferCopy staging_region = {};
+    staging_region.srcOffset = srcOffset;
+    staging_region.dstOffset = dstOffset;
+    staging_region.size      = size;
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, vk.staging_buffer, buffer, 1, &staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+}
+void StageBuffer_treedebugentrypadded(VkBuffer buffer, tree_debug_entry_padded *data, u64 size)
+{
+    StageBuffer_treedebugentrypadded(buffer, data, 0, 0, size);
+}
+
 
 void StageBuffer_aabbpadded(VkBuffer buffer, AABB_padded *data, u64 srcOffset, u64 dstOffset, u64 size)
 {
@@ -2158,6 +2234,42 @@ void ReadBuffer_treeentry(tree_entry *data, VkBuffer buffer, u64 size)
     ReadBuffer_treeentry(data, buffer, 0, 0, size);
 }
 
+void ReadBuffer_treeentrypadded(tree_entry_padded *data, VkBuffer buffer, u64 srcOffset, u64 dstOffset, u64 size)
+{
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    
+    VkBufferCopy staging_region = {};
+    staging_region.srcOffset = srcOffset;
+    staging_region.dstOffset = dstOffset;
+    staging_region.size      = size;
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, buffer, vk.staging_buffer, 1, &staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+    
+    memcpy(data, vk.staging_mapptr, size);
+}
+void ReadBuffer_treeentrypadded(tree_entry_padded *data, VkBuffer buffer, u64 size)
+{
+    ReadBuffer_treeentrypadded(data, buffer, 0, 0, size);
+}
+
 void ReadBuffer_treedebugentry(tree_debug_entry *data, VkBuffer buffer, u64 srcOffset, u64 dstOffset, u64 size)
 {
     VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
@@ -2193,6 +2305,43 @@ void ReadBuffer_treedebugentry(tree_debug_entry *data, VkBuffer buffer, u64 size
 {
     ReadBuffer_treedebugentry(data, buffer, 0, 0, size);
 }
+
+void ReadBuffer_treedebugentrypadded(tree_debug_entry_padded *data, VkBuffer buffer, u64 srcOffset, u64 dstOffset, u64 size)
+{
+    VkPipelineStageFlags staging_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    
+    VkSubmitInfo stage_si = {};
+    stage_si.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    stage_si.pNext                = NULL;
+    stage_si.waitSemaphoreCount   = 0;
+    stage_si.pWaitSemaphores      = NULL;
+    stage_si.pWaitDstStageMask    = &staging_mask;
+    stage_si.commandBufferCount   = 1;
+    stage_si.pCommandBuffers      = &vk.commandbuffer;
+    stage_si.signalSemaphoreCount = 0;
+    stage_si.pSignalSemaphores    = NULL;
+    
+    
+    VkBufferCopy staging_region = {};
+    staging_region.srcOffset = srcOffset;
+    staging_region.dstOffset = dstOffset;
+    staging_region.size      = size;
+    
+    vkBeginCommandBuffer(vk.commandbuffer, &vk.commandbuffer_bi);
+    vkCmdCopyBuffer(vk.commandbuffer, buffer, vk.staging_buffer, 1, &staging_region);
+    vkEndCommandBuffer(vk.commandbuffer);
+    
+    vkQueueSubmit(vk.queue, 1, &stage_si, vk.fence);
+    vkWaitForFences(vk.device, 1, &vk.fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(vk.device, 1, &vk.fence);
+    
+    memcpy(data, vk.staging_mapptr, size);
+}
+void ReadBuffer_treedebugentrypadded(tree_debug_entry_padded *data, VkBuffer buffer, u64 size)
+{
+    ReadBuffer_treedebugentrypadded(data, buffer, 0, 0, size);
+}
+
 
 
 void ReadBuffer_aabbpadded(AABB_padded *data, VkBuffer buffer, u64 srcOffset, u64 dstOffset, u64 size)
@@ -2513,7 +2662,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     
     //VkDeviceMemory staging_memory;
-    vk.staging_buffer = CreateBuffer(10 * MEGABYTE,
+    vk.staging_buffer = CreateBuffer(100 * MEGABYTE,
                                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                      vk.device, gpu_memprops,
@@ -3044,7 +3193,7 @@ int CALLBACK WinMain(HINSTANCE instance,
     u32 blockcount = (u32)ceil((r32)worksize / (r32)blocksize);  // I see some padding in the future
     
     // for each of the digit places...
-    u32 bitwidth = 32;
+    u32 bitwidth = 32;  // should be 30. Morton codes only ever have 30 bits, since there's 10 digits per each of x,y,z
     u32 process_digitcount = bitwidth;
     //u32 process_digitcount = 1;
     
@@ -3787,12 +3936,12 @@ int CALLBACK WinMain(HINSTANCE instance,
     primitive_entry *sorted_mortons = (primitive_entry *)calloc(worksize, sizeof(primitive_entry));
     ReadBuffer_primentry(sorted_mortons, mortondata_buffer, worksize * sizeof(primitive_entry));
     
-#if 0
+#if 1
     ODS("Sorted mortons: \n");
     for(u32 i = 0; i < worksize; i++)
     {
         char *morton = DecToBin(sorted_mortons[i].code, 32);
-        ODS("%5d %5d %s \n", i, sorted_mortons[i].index, morton);
+        ODS("%7d %7d %s \n", i, sorted_mortons[i].index, morton);
         free(morton);
     }
     ODS("\n");
@@ -3820,18 +3969,18 @@ int CALLBACK WinMain(HINSTANCE instance,
     ReadBuffer_primentry(sorted_keys, sorted_mortons_buffer, worksize*sizeof(primitive_entry));
     
     
-    
-    u32 tree_datasize = (2 * worksize - 1) * sizeof(tree_entry);
+    u32 tree_datasize        = (2 * worksize - 1) * sizeof(tree_entry);
+    u32 tree_datasize_padded = (2 * worksize - 1) * sizeof(tree_entry_padded);
     
     VkDeviceMemory tree_memory;
-    VkBuffer tree_buffer = CreateBuffer(tree_datasize, 
+    VkBuffer tree_buffer = CreateBuffer(tree_datasize_padded, 
                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                         vk.device, gpu_memprops,
                                         &tree_memory);
     
     
-    tree_entry *tree_gpu = (tree_entry *)calloc(2*worksize-1, sizeof(tree_entry));
+    tree_entry_padded *tree_gpu = (tree_entry_padded *)calloc(2*worksize-1, sizeof(tree_entry_padded));
     
     tree_gpu[0].parent = -1;  // the root has no parent
     
@@ -3842,22 +3991,26 @@ int CALLBACK WinMain(HINSTANCE instance,
         tree_gpu[i].right = -1;
     }
     
-    StageBuffer_treeentry(tree_buffer, tree_gpu, tree_datasize);
+    //StageBuffer_treeentry(tree_buffer, tree_gpu, tree_datasize);
+    StageBuffer_treeentrypadded(tree_buffer, tree_gpu, tree_datasize_padded);
     
     
     
-    u32 tree_debug_datasize = tree_datasize;
+    u32 tree_debug_datasize        = tree_datasize;
+    u32 tree_debug_datasize_padded = tree_datasize_padded;
+    
     
     VkDeviceMemory tree_debug_memory;
-    VkBuffer tree_debug_buffer = CreateBuffer(tree_debug_datasize, 
+    VkBuffer tree_debug_buffer = CreateBuffer(tree_debug_datasize_padded, 
                                               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                               vk.device, gpu_memprops,
                                               &tree_debug_memory);
     
-    tree_debug_entry *tree_debug_gpu = (tree_debug_entry *)calloc(2*worksize-1, sizeof(tree_debug_entry));
+    tree_debug_entry_padded *tree_debug_gpu = (tree_debug_entry_padded *)calloc(2*worksize-1, sizeof(tree_debug_entry_padded));
     
-    StageBuffer_treedebugentry(tree_debug_buffer, tree_debug_gpu, tree_debug_datasize);
+    //StageBuffer_treedebugentry(tree_debug_buffer, tree_debug_gpu, tree_debug_datasize);
+    StageBuffer_treedebugentrypadded(tree_debug_buffer, tree_debug_gpu, tree_debug_datasize_padded);
     
     
     
@@ -3908,17 +4061,20 @@ int CALLBACK WinMain(HINSTANCE instance,
     result = vkResetFences(vk.device, 1, &vk.fence);
     ODS_RES("Suspicious fence reset: %s \n");
     
-    ReadBuffer_treeentry(tree_gpu, tree_buffer, tree_datasize);
+    //ReadBuffer_treeentry(tree_gpu, tree_buffer, tree_datasize);
+    ReadBuffer_treeentrypadded(tree_gpu, tree_buffer, tree_datasize_padded);
     
     
-    ReadBuffer_treedebugentry(tree_debug_gpu, tree_debug_buffer, tree_debug_datasize);
+    //ReadBuffer_treedebugentry(tree_debug_gpu, tree_debug_buffer, tree_debug_datasize);
+    ReadBuffer_treedebugentrypadded(tree_debug_gpu, tree_debug_buffer, tree_debug_datasize_padded);
     
     
     u32 *sorted_values = (u32 *)calloc(worksize, sizeof(u32));
     for(u32 i = 0; i < worksize; i++)
         sorted_values[i] = sorted_keys[i].code;
     
-    tree_entry *tree_cpu = (tree_entry *)calloc(2*worksize-1, sizeof(tree_entry));  // FREE after the validation
+    //tree_entry *tree_cpu = (tree_entry *)calloc(2*worksize-1, sizeof(tree_entry));  // FREE after the validation
+    tree_entry_padded *tree_cpu = (tree_entry_padded *)calloc(2*worksize-1, sizeof(tree_entry_padded));  // FREE after the validation
     tree_cpu[0].parent = -1;
     
     u32 n = worksize;
@@ -4044,7 +4200,15 @@ int CALLBACK WinMain(HINSTANCE instance,
     
     // write the cpu-calculated tree to the GPU, see if that will work with the models
     
+    VkDeviceMemory tree_memory_cpu;
+    VkBuffer tree_buffer_cpu = CreateBuffer(tree_datasize_padded,
+                                            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                            vk.device, gpu_memprops,
+                                            &tree_memory_cpu);
     
+    //StageBuffer_treeentry(tree_buffer_cpu, tree_cpu, tree_datasize);
+    StageBuffer_treeentrypadded(tree_buffer_cpu, tree_cpu, tree_datasize_padded);
     
     
     
@@ -4409,12 +4573,16 @@ int CALLBACK WinMain(HINSTANCE instance,
     bvh_in->resources[0].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     bvh_in->resources[0].buffer = atomic_counters_buffer;
     bvh_in->resources[0].memory = atomic_counters_memory;
+#if 1
     bvh_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     bvh_in->resources[1].buffer = tree_buffer;
     bvh_in->resources[1].memory = tree_memory;
-    //bvh_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    //bvh_in->resources[1].buffer = tree_buffer_cpu;
-    //bvh_in->resources[1].memory = tree_memory_cpu;
+#endif
+#if 0
+    bvh_in->resources[1].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bvh_in->resources[1].buffer = tree_buffer_cpu;
+    bvh_in->resources[1].memory = tree_memory_cpu;
+#endif
     bvh_in->resources[2].type   = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     bvh_in->resources[2].buffer = bvh_buffer;
     bvh_in->resources[2].memory = bvh_memory;

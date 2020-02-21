@@ -17,12 +17,14 @@ struct tree_node
     int parent;
     int left;
     int right;
+    int pad;
 };
 struct tree_debug_node
 {
     int d;
     int delta_min;
     int delta_node;
+    int pad;
 };
 
 layout (std430, set = 0, binding = 0) coherent buffer morton    { entry           sorted_keys[]; };
